@@ -31,8 +31,8 @@ func main() {
 
 	router := api.SetupRoutes(db, cfg)
 
-	log.Println("API running on :8080")
-	if err := router.Run(":8080"); err != nil {
+	log.Println("API running on :8085")
+	if err := router.Run(":8085"); err != nil {
 		log.Fatal(err)
 	}
 }

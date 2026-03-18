@@ -22,7 +22,7 @@ COPY migrations ./migrations
 
 # Segredos e config (POSTGRES_URL, INTELBRAS_BASE_URL, API_KEY, ENCRYPTION_KEY)
 # devem ser injetados em runtime (docker-compose, K8s, etc.). Não definir aqui.
-EXPOSE 8080
+EXPOSE 8085
 
 CMD ["/bin/api"]
 

@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16
+    container_name: ev-charging-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: charging
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    container_name: ev-charging-api
+    depends_on:
+      - db
+    environment:
+      POSTGRES_URL: postgres://postgres:postgres@db:5432/charging?sslmode=disable
+      INTELBRAS_BASE_URL: ${INTELBRAS_BASE_URL}
+      API_KEY: ${API_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+    ports:
+      - "8080:8080"
+
+  worker:
+    build: .
+    container_name: ev-charging-worker
+    depends_on:
+      - db
+    command: ["/bin/worker"]
+    environment:
+      POSTGRES_URL: postgres://postgres:postgres@db:5432/charging?sslmode=disable
+      INTELBRAS_BASE_URL: ${INTELBRAS_BASE_URL}
+      API_KEY: ${API_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+
+volumes:
+  db_data:
+

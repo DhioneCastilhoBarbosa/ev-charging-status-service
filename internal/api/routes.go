@@ -30,7 +30,7 @@ func SetupRoutes(db *sqlx.DB, cfg config.Config) *gin.Engine {
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// Dependências de domínio
-	intelbrasClient := intelbras.NewClient(cfg.IntelbrasBaseURL, 15*time.Second)
+	intelbrasClient := intelbras.NewClient(cfg.IntelbrasBaseURL, 30*time.Second)
 
 	userRepo := repository.NewUserRepository(db)
 	credsRepo := repository.NewCredentialsRepository(db)

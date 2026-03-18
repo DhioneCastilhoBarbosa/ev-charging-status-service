@@ -21,7 +21,7 @@ func NewStationsHandler(s *service.StationService, apiKey string) *StationsHandl
 	return &StationsHandler{
 		service: s,
 		apiKey:  apiKey,
-		timeout: 20 * time.Second,
+		timeout: 30 * time.Second,
 	}
 }
 

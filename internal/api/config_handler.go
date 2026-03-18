@@ -35,7 +35,7 @@ func NewConfigHandler(s *service.ConfigService, apiKey string) *ConfigHandler {
 	return &ConfigHandler{
 		service: s,
 		apiKey:  apiKey,
-		timeout: 15 * time.Second,
+		timeout: 30 * time.Second,
 	}
 }
 

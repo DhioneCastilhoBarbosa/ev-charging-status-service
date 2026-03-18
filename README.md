@@ -37,13 +37,13 @@ Redis e Kafka estão no `go.mod` para uso futuro; na versão atual não são uti
 ```mermaid
 flowchart TB
     %% Clientes da API
-    subgraph Client["Cliente (sistema integrador)"]
-        C[HTTP client\n(backend, outro microserviço)]
+    subgraph Client["Cliente - sistema integrador"]
+        C[HTTP client backend]
     end
 
     %% Serviço principal
     subgraph Service["ev-charging-status-service"]
-        subgraph API["API HTTP :8080"]
+        subgraph API["API HTTP 8080"]
             R[Router Gin]
             R --> Health["GET /health"]
             R --> V1["/v1 (rate limit,\nX-API-Key)"]
@@ -51,10 +51,10 @@ flowchart TB
             V1 --> Stations["StationsHandler\nGET /stations"]
         end
 
-        subgraph Worker["Worker (processo em background)"]
-            Scheduler["SchedulerService\nintervalo: 3 min"]
-            Job["StationWebhookJob\nbusca estações\n+ monta payload"]
-            Sender["WebhookService\nsender a cada 30s\n+ retentativas/backoff"]
+        subgraph Worker["Worker - background"]
+            Scheduler["SchedulerService 3 min"]
+            Job["StationWebhookJob\nmonta payload"]
+            Sender["WebhookService\nsender 30s + retry"]
             Scheduler --> Job
             Job --> Queue["Tabela webhook_events\n(status=PENDING)"]
             Sender --> Queue
@@ -63,7 +63,7 @@ flowchart TB
     end
 
     %% Persistência
-    subgraph DB["PostgreSQL"]
+    subgraph DB["PostgreSQL - persistência"]
         Users[(users)]
         Creds[(third_party_credentials)]
         Webhooks[(webhooks)]
@@ -71,9 +71,9 @@ flowchart TB
     end
 
     %% Sistemas externos
-    subgraph External["Externos"]
-        Intelbras["API Move/Intelbras\n(login, charge-points)"]
-        WebhookURL["URL do Webhook\n(n8n, Pipedream, n8n, etc.)"]
+    subgraph External["Sistemas externos"]
+        Intelbras["API Move Intelbras"]
+        WebhookURL["URL do Webhook (n8n, Pipedream, etc.)"]
     end
 
     %% Relações

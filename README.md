@@ -36,44 +36,57 @@ Redis e Kafka estão no `go.mod` para uso futuro; na versão atual não são uti
 
 ```mermaid
 flowchart TB
-    subgraph Client["Cliente"]
-        A[Cliente HTTP]
+    %% Clientes da API
+    subgraph Client["Cliente (sistema integrador)"]
+        C[HTTP client\n(backend, outro microserviço)]
     end
 
+    %% Serviço principal
     subgraph Service["ev-charging-status-service"]
-        subgraph API["API :8080"]
+        subgraph API["API HTTP :8080"]
             R[Router Gin]
             R --> Health["GET /health"]
-            R --> V1["/v1"]
-            V1 --> Config["POST /config\nGET /config/status"]
-            V1 --> Stations["GET /stations"]
+            R --> V1["/v1 (rate limit,\nX-API-Key)"]
+            V1 --> Config["ConfigHandler\nPOST /config\nGET /config/status\nDELETE /config"]
+            V1 --> Stations["StationsHandler\nGET /stations"]
         end
 
-        subgraph Worker["Worker"]
-            Scheduler[Scheduler 3 min]
-            Job[StationWebhookJob]
-            Sender[Webhook Sender 30s]
+        subgraph Worker["Worker (processo em background)"]
+            Scheduler["SchedulerService\nintervalo: 3 min"]
+            Job["StationWebhookJob\nbusca estações\n+ monta payload"]
+            Sender["WebhookService\nsender a cada 30s\n+ retentativas/backoff"]
             Scheduler --> Job
-            Job --> Enqueue[Enfileirar evento]
-            Sender --> POST[POST webhook]
+            Job --> Queue["Tabela webhook_events\n(status=PENDING)"]
+            Sender --> Queue
+            Sender --> POST["POST webhook"]
         end
     end
 
+    %% Persistência
     subgraph DB["PostgreSQL"]
-        T[(Tabelas:\nusers, credentials,\nwebhooks, webhook_events)]
+        Users[(users)]
+        Creds[(third_party_credentials)]
+        Webhooks[(webhooks)]
+        Events[(webhook_events)]
     end
 
+    %% Sistemas externos
     subgraph External["Externos"]
-        Intelbras[API Move/Intelbras\nlogin + charge-points]
-        WebhookURL[URL do Webhook\n(n8n, Pipedream, etc.)]
+        Intelbras["API Move/Intelbras\n(login, charge-points)"]
+        WebhookURL["URL do Webhook\n(n8n, Pipedream, n8n, etc.)"]
     end
 
-    A -->|X-API-Key| API
-    API --> DB
+    %% Relações
+    C -->|X-API-Key + JSON| API
+    API --> Users
+    API --> Creds
+    API --> Webhooks
     API -->|Login / ChargePoints| Intelbras
-    Worker --> DB
+
+    Worker --> Creds
+    Worker --> Events
     Worker -->|Login / ChargePoints| Intelbras
-    Worker -->|POST JSON| WebhookURL
+    Worker -->|POST JSON\npayload stations| WebhookURL
 ```
 
 ### Componentes

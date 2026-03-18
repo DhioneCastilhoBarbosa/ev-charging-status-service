@@ -24,5 +24,6 @@ COPY migrations ./migrations
 # devem ser injetados em runtime (docker-compose, K8s, etc.). Não definir aqui.
 EXPOSE 8085
 
-CMD ["/bin/api"]
+# Um único container: worker em background, API em primeiro plano (PID 1).
+CMD ["sh", "-c", "/bin/worker & exec /bin/api"]
 

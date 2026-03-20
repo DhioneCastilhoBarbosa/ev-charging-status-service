@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -67,7 +68,7 @@ func (c *Client) Login(ctx context.Context, req LoginRequest) (*LoginResponse, e
 		if err != nil {
 			lastErr = fmt.Errorf("execute login request: %w", err)
 			// Retry apenas para erros transitórios de rede (inclui TLS handshake timeout)
-			if attempt < maxAttempts-1 && (isTimeoutErr(err) || isTLSHandshakeTimeout(err)) {
+			if attempt < maxAttempts-1 && (isTimeoutErr(err) || isTLSHandshakeTimeout(err) || isConnRefusedErr(err)) {
 				time.Sleep(time.Duration(1<<attempt) * time.Second)
 				continue
 			}
@@ -127,6 +128,18 @@ func isTimeoutErr(err error) bool {
 
 func isTLSHandshakeTimeout(err error) bool {
 	return strings.Contains(err.Error(), "TLS handshake timeout")
+}
+
+func isConnRefusedErr(err error) bool {
+	// connection refused pode ser transitório, mas também pode indicar firewall/egress bloqueado.
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		if errors.Is(opErr.Err, syscall.ECONNREFUSED) {
+			return true
+		}
+	}
+	// fallback por string
+	return strings.Contains(strings.ToLower(err.Error()), "connection refused")
 }
 
 func retryAfterDelay(retryAfter string, fallback time.Duration) time.Duration {

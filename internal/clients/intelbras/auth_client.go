@@ -83,11 +83,23 @@ func (c *Client) Login(ctx context.Context, req LoginRequest) (*LoginResponse, e
 				log.Printf("[intelbras] login failed %d: %s", resp.StatusCode, string(respBody))
 			}
 
-			// Retry para rate limit/indisponibilidade.
-			if attempt < maxAttempts-1 && (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable) {
-				delay := retryAfterDelay(resp.Header.Get("Retry-After"), time.Duration(1<<attempt)*time.Second)
-				time.Sleep(delay)
-				continue
+			// Retry para falhas transitórias comuns (rate limit, gateway errors e timeouts).
+			// - 429/503: respeita Retry-After quando existir
+			// - 502/504: sem garantia de Retry-After; usa backoff exponencial
+			if attempt < maxAttempts-1 {
+				var delay time.Duration
+				switch resp.StatusCode {
+				case http.StatusTooManyRequests, http.StatusServiceUnavailable:
+					delay = retryAfterDelay(resp.Header.Get("Retry-After"), time.Duration(1<<attempt)*time.Second)
+				case http.StatusBadGateway, http.StatusGatewayTimeout:
+					delay = time.Duration(1<<attempt) * time.Second
+				}
+				if delay > 0 {
+					if err := sleepWithContext(ctx, delay); err != nil {
+						return nil, err
+					}
+					continue
+				}
 			}
 
 			lastErr = fmt.Errorf("login failed with status %d", resp.StatusCode)
@@ -127,5 +139,16 @@ func retryAfterDelay(retryAfter string, fallback time.Duration) time.Duration {
 	}
 	// ou timestamp HTTP (vamos manter simples: usar fallback)
 	return fallback
+}
+
+func sleepWithContext(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 

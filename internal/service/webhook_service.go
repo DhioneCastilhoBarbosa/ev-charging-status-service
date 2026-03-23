@@ -113,6 +113,8 @@ func (s *WebhookService) processDueEvents(ctx context.Context, maxAttempts int) 
 			continue
 		}
 		if !w.Active {
+			// Webhook desativado: remove evento pendente para não acumular lixo.
+			_ = s.webhookEventRepo.DeleteByID(ctx, e.ID)
 			continue
 		}
 
@@ -163,6 +165,14 @@ func (s *WebhookService) processDueEvents(ctx context.Context, maxAttempts int) 
 		e.LastError = lastErr
 		e.AttemptCount++
 		e.NextAttempt = nextAttempt
+
+		// Otimização de storage:
+		// - sucesso: não manter histórico em banco (remove o evento)
+		// - retry/failed: manter no banco para controlar próxima tentativa e auditoria de falha
+		if e.Status == repository.WebhookEventStatusSent {
+			_ = s.webhookEventRepo.DeleteByID(ctx, e.ID)
+			continue
+		}
 		_ = s.webhookEventRepo.Update(ctx, &e)
 	}
 }

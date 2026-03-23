@@ -22,20 +22,7 @@ services:
       API_KEY: ${API_KEY}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
     ports:
-      - "8080:8080"
-
-  worker:
-    build: .
-    container_name: ev-charging-worker
-    depends_on:
-      - db
-    command: ["/bin/worker"]
-    environment:
-      POSTGRES_URL: postgres://postgres:postgres@db:5432/charging?sslmode=disable
-      INTELBRAS_BASE_URL: ${INTELBRAS_BASE_URL}
-      API_KEY: ${API_KEY}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      - "8085:8085"
 
 volumes:
   db_data:
-

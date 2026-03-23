@@ -86,3 +86,8 @@ WHERE id = :id;
 	return err
 }
 
+func (r *WebhookEventRepository) DeleteByID(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM webhook_events WHERE id = $1`, id)
+	return err
+}
+

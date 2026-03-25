@@ -182,7 +182,7 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "https://integraodefense-apistatuscve-loefbt-f377b9-54-159-164-244.traefik.me/",
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "EV Charging Status API",

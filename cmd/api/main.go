@@ -3,7 +3,7 @@
 //	@title			EV Charging Status API
 //	@version		1.0
 //	@description	API para configuração e consulta de estações de recarga (Move/Intelbras) e envio por webhook.
-//	@host			localhost:8080
+//	@host			https://integraodefense-apistatuscve-loefbt-f377b9-54-159-164-244.traefik.me/
 //	@BasePath		/
 //	@securityDefinitions.apikey	ApiKeyAuth
 //	@in							header

@@ -21,7 +21,8 @@ type configRequest struct {
 	Email              string  `json:"email"`
 	Username           string  `json:"username"`
 	Password           string  `json:"password" binding:"required"`
-	RecaptchaResponse  string  `json:"recaptchaResponse"`
+	// Ignorado apenas na geração Swagger/OpenAPI (o campo continua aceito no body do endpoint).
+	RecaptchaResponse string `json:"recaptchaResponse" swaggerignore:"true"`
 	APIKey             *string `json:"apiKey"`
 	WebhookURL         string  `json:"webhookUrl" binding:"required,url"`
 }
@@ -52,7 +53,7 @@ func (h *ConfigHandler) RegisterRoutes(rg *gin.RouterGroup) {
 //	@Tags			config
 //	@Accept			json
 //	@Produce		json
-//	@Param			body	body		object	true	"email ou username, password, webhookUrl (obrigatório), apiKey e recaptchaResponse (opcionais)"
+//	@Param			body	body		object	true	"email ou username, password, webhookUrl (obrigatório) e apiKey (opcional)"
 //	@Success		204		"No content"
 //	@Failure		400		{object}	object	"invalid request"
 //	@Failure		401		{object}	object	"unauthorized"

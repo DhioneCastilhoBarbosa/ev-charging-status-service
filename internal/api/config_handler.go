@@ -18,8 +18,7 @@ type ConfigHandler struct {
 }
 
 type ConfigRequest struct {
-	Email              string  `json:"email"`
-	Username           string  `json:"username"`
+	Email              string  `json:"email" binding:"required,email"`
 	Password           string  `json:"password" binding:"required"`
 	// Ignorado apenas na geração Swagger/OpenAPI (o campo continua aceito no body do endpoint).
 	RecaptchaResponse string `json:"recaptchaResponse" swaggerignore:"true"`
@@ -53,7 +52,7 @@ func (h *ConfigHandler) RegisterRoutes(rg *gin.RouterGroup) {
 //	@Tags			Configuração
 //	@Accept			json
 //	@Produce		json
-//	@Param			body	body		ConfigRequest	true	"email ou username, password, webhookUrl (obrigatório) e apiKey (opcional)"
+//	@Param			body	body		ConfigRequest	true	"email, password, webhookUrl (obrigatório) e apiKey (opcional)"
 //	@Success		204		"No content"
 //	@Failure		400		{object}	ErrorResponse	"invalid request"
 //	@Failure		401		{object}	ErrorResponse	"unauthorized"
@@ -74,21 +73,11 @@ func (h *ConfigHandler) handleConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
-	// Login na API de terceiros exige email; aceita "email" ou "username" no body
-	if req.Email == "" && req.Username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email or username is required"})
-		return
-	}
-	loginEmail := req.Email
-	if loginEmail == "" {
-		loginEmail = req.Username
-	}
-
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.timeout)
 	defer cancel()
 
 	input := service.ConfigInput{
-		Email:              loginEmail,
+		Email:              req.Email,
 		Password:           req.Password,
 		RecaptchaResponse:  req.RecaptchaResponse,
 		APIKey:             req.APIKey,

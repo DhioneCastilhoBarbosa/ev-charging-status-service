@@ -172,7 +172,7 @@ go run cmd/worker/main.go
 | Método | Rota | Descrição |
 |--------|------|-----------|
 | GET | `/health` | Health check (sem autenticação). |
-| POST | `/v1/config` | Configura credenciais e webhook (body: email/username, password, webhookUrl e opcional apiKey). Requer `X-API-Key` se `API_KEY` estiver definida. |
+| POST | `/v1/config` | Configura credenciais e webhook (body: email, password, webhookUrl e opcional apiKey). Requer `X-API-Key` se `API_KEY` estiver definida. |
 | DELETE | `/v1/config` | Remove o usuário informado (via body `email`/`username`) e todos os dados relacionados (credenciais, webhooks, eventos). |
 | GET | `/v1/config/status` | Retorna se há configuração e se o token está presente (sem expor o token). |
 | GET | `/v1/stations` | Lista estações da API de terceiros (usa token salvo ou renova). |

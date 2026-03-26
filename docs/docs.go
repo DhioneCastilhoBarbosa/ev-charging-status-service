@@ -55,7 +55,7 @@ const docTemplate = `{
                 "summary": "Configura credenciais e webhook",
                 "parameters": [
                     {
-                        "description": "email ou username, password, webhookUrl (obrigatório) e apiKey (opcional)",
+                        "description": "email, password, webhookUrl (obrigatório) e apiKey (opcional)",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -194,6 +194,7 @@ const docTemplate = `{
         "api.ConfigRequest": {
             "type": "object",
             "required": [
+                "email",
                 "password",
                 "webhookUrl"
             ],
@@ -205,9 +206,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "password": {
-                    "type": "string"
-                },
-                "username": {
                     "type": "string"
                 },
                 "webhookUrl": {

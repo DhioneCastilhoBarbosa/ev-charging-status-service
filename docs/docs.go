@@ -15,6 +15,26 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/health": {
+            "get": {
+                "description": "Verifica se o serviço está ativo.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/v1/config": {
             "post": {
                 "security": [
@@ -30,7 +50,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "config"
+                    "Configuração"
                 ],
                 "summary": "Configura credenciais e webhook",
                 "parameters": [
@@ -40,7 +60,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/api.ConfigRequest"
                         }
                     }
                 ],
@@ -51,19 +71,19 @@ const docTemplate = `{
                     "400": {
                         "description": "invalid request",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "unauthorized",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "502": {
                         "description": "configuration failed",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -79,7 +99,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "config"
+                    "Configuração"
                 ],
                 "summary": "Remove configuração e dados do usuário",
                 "responses": {
@@ -89,7 +109,7 @@ const docTemplate = `{
                     "401": {
                         "description": "unauthorized",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -107,26 +127,26 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "config"
+                    "Configuração"
                 ],
                 "summary": "Status da configuração",
                 "responses": {
                     "200": {
                         "description": "configured, tokenPresent, tokenExpiresAt, apiUsername",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/api.ConfigStatusResponse"
                         }
                     },
                     "401": {
                         "description": "unauthorized",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "configuration unavailable",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
                 }
@@ -144,27 +164,105 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "stations"
+                    "Estação"
                 ],
                 "summary": "Lista estações",
                 "responses": {
                     "200": {
                         "description": "stations: array de estações",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/api.StationsResponse"
                         }
                     },
                     "401": {
                         "description": "unauthorized",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "502": {
                         "description": "stations unavailable",
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "api.ConfigRequest": {
+            "type": "object",
+            "required": [
+                "password",
+                "webhookUrl"
+            ],
+            "properties": {
+                "apiKey": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                },
+                "webhookUrl": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.ConfigStatusResponse": {
+            "type": "object",
+            "properties": {
+                "apiUsername": {
+                    "type": "string",
+                    "example": "usuario@empresa.com"
+                },
+                "configured": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "tokenExpiresAt": {
+                    "type": "string",
+                    "example": "2026-03-25T10:30:00Z"
+                },
+                "tokenPresent": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "api.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "unauthorized"
+                }
+            }
+        },
+        "api.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                }
+            }
+        },
+        "api.StationsResponse": {
+            "type": "object",
+            "properties": {
+                "stations": {
+                    "description": "Estrutura varia conforme payload da API Move/Intelbras.",
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": true
                     }
                 }
             }
@@ -182,9 +280,9 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "https://integraodefense-apistatuscve-loefbt-f377b9-54-159-164-244.traefik.me/",
+	Host:             "integraodefense-apistatuscve-loefbt-f377b9-54-159-164-244.traefik.me",
 	BasePath:         "/",
-	Schemes:          []string{},
+	Schemes:          []string{"https"},
 	Title:            "EV Charging Status API",
 	Description:      "API para configuração e consulta de estações de recarga (Move/Intelbras) e envio por webhook.",
 	InfoInstanceName: "swagger",

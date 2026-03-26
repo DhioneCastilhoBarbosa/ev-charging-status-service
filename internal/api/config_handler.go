@@ -17,7 +17,7 @@ type ConfigHandler struct {
 	timeout  time.Duration
 }
 
-type configRequest struct {
+type ConfigRequest struct {
 	Email              string  `json:"email"`
 	Username           string  `json:"username"`
 	Password           string  `json:"password" binding:"required"`
@@ -50,14 +50,14 @@ func (h *ConfigHandler) RegisterRoutes(rg *gin.RouterGroup) {
 //
 //	@Summary		Configura credenciais e webhook
 //	@Description	Faz login na API Move/Intelbras, persiste credenciais e salva a URL para envio do webhook.
-//	@Tags			config
+//	@Tags			Configuração
 //	@Accept			json
 //	@Produce		json
-//	@Param			body	body		object	true	"email ou username, password, webhookUrl (obrigatório) e apiKey (opcional)"
+//	@Param			body	body		ConfigRequest	true	"email ou username, password, webhookUrl (obrigatório) e apiKey (opcional)"
 //	@Success		204		"No content"
-//	@Failure		400		{object}	object	"invalid request"
-//	@Failure		401		{object}	object	"unauthorized"
-//	@Failure		502		{object}	object	"configuration failed"
+//	@Failure		400		{object}	ErrorResponse	"invalid request"
+//	@Failure		401		{object}	ErrorResponse	"unauthorized"
+//	@Failure		502		{object}	ErrorResponse	"configuration failed"
 //	@Security		ApiKeyAuth
 //	@Router			/v1/config [post]
 func (h *ConfigHandler) handleConfig(c *gin.Context) {
@@ -68,7 +68,7 @@ func (h *ConfigHandler) handleConfig(c *gin.Context) {
 		}
 	}
 
-	var req configRequest
+	var req ConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("[config] bind error: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
@@ -108,11 +108,11 @@ func (h *ConfigHandler) handleConfig(c *gin.Context) {
 //
 //	@Summary		Status da configuração
 //	@Description	Indica se há configuração e se o token de acesso está presente.
-//	@Tags			config
+//	@Tags			Configuração
 //	@Produce		json
-//	@Success		200	{object}	object	"configured, tokenPresent, tokenExpiresAt, apiUsername"
-//	@Failure		401	{object}	object	"unauthorized"
-//	@Failure		500	{object}	object	"configuration unavailable"
+//	@Success		200	{object}	ConfigStatusResponse	"configured, tokenPresent, tokenExpiresAt, apiUsername"
+//	@Failure		401	{object}	ErrorResponse	"unauthorized"
+//	@Failure		500	{object}	ErrorResponse	"configuration unavailable"
 //	@Security		ApiKeyAuth
 //	@Router			/v1/config/status [get]
 func (h *ConfigHandler) handleConfigStatus(c *gin.Context) {
@@ -137,10 +137,10 @@ func (h *ConfigHandler) handleConfigStatus(c *gin.Context) {
 //
 //	@Summary		Remove configuração e dados do usuário
 //	@Description	Apaga o usuário indicado e todos os dados relacionados (credenciais, webhooks, eventos) via cascade.
-//	@Tags			config
+//	@Tags			Configuração
 //	@Accept			json
 //	@Success		204	"No content"
-//	@Failure		401	{object}	object	"unauthorized"
+//	@Failure		401	{object}	ErrorResponse	"unauthorized"
 //	@Security		ApiKeyAuth
 //	@Router			/v1/config [delete]
 func (h *ConfigHandler) handleDeleteConfig(c *gin.Context) {

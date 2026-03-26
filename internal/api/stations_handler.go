@@ -33,11 +33,11 @@ func (h *StationsHandler) RegisterRoutes(rg *gin.RouterGroup) {
 //
 //	@Summary		Lista estações
 //	@Description	Retorna a lista de estações de recarga (e conectores) da API Move/Intelbras, usando o token salvo ou renovando-o.
-//	@Tags			stations
+//	@Tags			Estação
 //	@Produce		json
-//	@Success		200	{object}	object	"stations: array de estações"
-//	@Failure		401	{object}	object	"unauthorized"
-//	@Failure		502	{object}	object	"stations unavailable"
+//	@Success		200	{object}	StationsResponse	"stations: array de estações"
+//	@Failure		401	{object}	ErrorResponse	"unauthorized"
+//	@Failure		502	{object}	ErrorResponse	"stations unavailable"
 //	@Security		ApiKeyAuth
 //	@Router			/v1/stations [get]
 func (h *StationsHandler) handleGetStations(c *gin.Context) {

@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -44,15 +45,23 @@ func SetupRoutes(db *sqlx.DB, cfg config.Config) *gin.Engine {
 	webhookRepo := repository.NewWebhookRepository(db)
 
 	configService := service.NewConfigService(userRepo, credsRepo, webhookRepo, intelbrasClient, cfg.EncryptionKey)
-	configHandler := NewConfigHandler(configService, cfg.APIKey)
+	wsAuth := service.NewWSAuthService(cfg.WSJWTSecret, cfg.WSTokenTTL)
+	configHandler := NewConfigHandler(configService, wsAuth, cfg.APIKey, cfg.WSTokenTTL)
 
 	stationService := service.NewStationService(credsRepo, intelbrasClient, cfg.EncryptionKey)
 	stationsHandler := NewStationsHandler(stationService, cfg.APIKey)
+	wsHub := NewWSHub()
+	wsHandler := NewWSHandler(cfg.APIKey, cfg.WSTokenTTL, wsAuth, userRepo, credsRepo, wsHub)
 
 	v1 := router.Group("/v1")
 	v1.Use(RateLimitMiddleware(0.25, 10)) // 15 req/min por IP, burst 10
 	configHandler.RegisterRoutes(v1)
 	stationsHandler.RegisterRoutes(v1)
+	wsHandler.RegisterRoutes(v1)
+
+	// Publicador WS roda no processo da API para alimentar conexões em memória por usuário.
+	wsPublisher := service.NewWSStationPublisher(credsRepo, stationService, wsHub)
+	go wsPublisher.Run(context.Background(), time.Duration(cfg.WSPublishIntervalSeconds)*time.Second)
 
 	return router
 }

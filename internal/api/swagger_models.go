@@ -10,6 +10,12 @@ type ErrorResponse struct {
 	Error string `json:"error" example:"unauthorized"`
 }
 
+// ConfigResponse é o JWT curto para conectar ao WebSocket (POST /v1/config ou GET /v1/ws/token).
+type ConfigResponse struct {
+	Token     string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+	ExpiresIn int    `json:"expiresIn" example:"300"`
+}
+
 // ConfigStatusResponse representa o status da configuração.
 type ConfigStatusResponse struct {
 	Configured     bool   `json:"configured" example:"true"`

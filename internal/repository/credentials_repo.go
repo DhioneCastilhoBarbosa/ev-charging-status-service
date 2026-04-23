@@ -39,7 +39,7 @@ INSERT INTO third_party_credentials (
 ) VALUES (
     :id, :user_id, :api_username, :api_password, :api_key, :access_token, :token_expires_at
 )
-ON CONFLICT (id) DO UPDATE SET
+ON CONFLICT (user_id) DO UPDATE SET
     api_username = EXCLUDED.api_username,
     api_password = EXCLUDED.api_password,
     api_key = EXCLUDED.api_key,
@@ -83,5 +83,39 @@ func (r *CredentialsRepository) UpdateToken(ctx context.Context, id uuid.UUID, a
 		UPDATE third_party_credentials SET access_token = $1, token_expires_at = $2, updated_at = NOW() WHERE id = $3
 	`, accessToken, expiresAt, id)
 	return err
+}
+
+func (r *CredentialsRepository) ExistsByUserID(ctx context.Context, userID uuid.UUID) (bool, error) {
+	var exists bool
+	err := r.db.GetContext(ctx, &exists, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM third_party_credentials
+			WHERE user_id = $1
+		)
+	`, userID)
+	return exists, err
+}
+
+func (r *CredentialsRepository) ListAll(ctx context.Context) ([]ThirdPartyCredentials, error) {
+	var list []ThirdPartyCredentials
+	err := r.db.SelectContext(ctx, &list, `
+		SELECT id, user_id, api_username, api_password, api_key, access_token, token_expires_at, created_at, updated_at
+		FROM third_party_credentials
+		ORDER BY created_at DESC
+	`)
+	return list, err
+}
+
+// ListDistinctUserIDs retorna cada user_id uma vez (credencial mais recente por usuário).
+// Protege job/WS quando ainda existirem duplicatas antigas no banco.
+func (r *CredentialsRepository) ListDistinctUserIDs(ctx context.Context) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+	err := r.db.SelectContext(ctx, &ids, `
+		SELECT DISTINCT ON (user_id) user_id
+		FROM third_party_credentials
+		ORDER BY user_id, updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+	`)
+	return ids, err
 }
 

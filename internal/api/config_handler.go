@@ -13,7 +13,9 @@ import (
 
 type ConfigHandler struct {
 	service  *service.ConfigService
+	wsAuth   *service.WSAuthService
 	apiKey   string
+	tokenTTL int
 	timeout  time.Duration
 }
 
@@ -23,7 +25,7 @@ type ConfigRequest struct {
 	// Ignorado apenas na geração Swagger/OpenAPI (o campo continua aceito no body do endpoint).
 	RecaptchaResponse string `json:"recaptchaResponse" swaggerignore:"true"`
 	APIKey             *string `json:"apiKey"`
-	WebhookURL         string  `json:"webhookUrl" binding:"required,url"`
+	WebhookURL         string  `json:"webhookUrl" binding:"omitempty,url"`
 }
 
 type deleteConfigRequest struct {
@@ -31,11 +33,18 @@ type deleteConfigRequest struct {
 	Username string `json:"username"`
 }
 
-func NewConfigHandler(s *service.ConfigService, apiKey string) *ConfigHandler {
+func NewConfigHandler(
+	s *service.ConfigService,
+	wsAuth *service.WSAuthService,
+	apiKey string,
+	tokenTTL int,
+) *ConfigHandler {
 	return &ConfigHandler{
-		service: s,
-		apiKey:  apiKey,
-		timeout: 30 * time.Second,
+		service:  s,
+		wsAuth:   wsAuth,
+		apiKey:   apiKey,
+		tokenTTL: tokenTTL,
+		timeout:  30 * time.Second,
 	}
 }
 
@@ -45,17 +54,18 @@ func (h *ConfigHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.DELETE("/config", h.handleDeleteConfig)
 }
 
-// handleConfig configura credenciais e URL do webhook.
+// handleConfig configura credenciais na Intelbras e opcionalmente webhook; retorna token JWT para WebSocket.
 //
-//	@Summary		Configura credenciais e webhook
-//	@Description	Faz login na API Move/Intelbras, persiste credenciais e salva a URL para envio do webhook.
+//	@Summary		Configura credenciais (e token WebSocket)
+//	@Description	Faz login na API Move/Intelbras, persiste credenciais (criptografadas se `ENCRYPTION_KEY` existir). `webhookUrl` é opcional. Resposta inclui `token` e `expiresIn` (segundos) para `GET /v1/ws?token=` ou cliente WebSocket.
 //	@Tags			Configuração
 //	@Accept			json
 //	@Produce		json
-//	@Param			body	body		ConfigRequest	true	"email, password, webhookUrl (obrigatório) e apiKey (opcional)"
-//	@Success		204		"No content"
+//	@Param			body	body		ConfigRequest	true	"email e password (obrigatórios); webhookUrl e apiKey (opcionais)"
+//	@Success		200		{object}	ConfigResponse	"token, expiresIn"
 //	@Failure		400		{object}	ErrorResponse	"invalid request"
 //	@Failure		401		{object}	ErrorResponse	"unauthorized"
+//	@Failure		500		{object}	ErrorResponse	"ws token unavailable"
 //	@Failure		502		{object}	ErrorResponse	"configuration failed"
 //	@Security		ApiKeyAuth
 //	@Router			/v1/config [post]
@@ -84,13 +94,25 @@ func (h *ConfigHandler) handleConfig(c *gin.Context) {
 		WebhookURL:         req.WebhookURL,
 	}
 
-	if err := h.service.Configure(ctx, input); err != nil {
+	user, err := h.service.Configure(ctx, input)
+	if err != nil {
 		log.Printf("[config] configure error: %v", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "configuration failed"})
 		return
 	}
 
-	c.Status(http.StatusNoContent)
+	// Gera token WS imediatamente após configurar, para reduzir round-trip do cliente.
+	token, err := h.wsAuth.GenerateToken(user.ID, user.Username)
+	if err != nil {
+		log.Printf("[config] ws token generation error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ws token unavailable"})
+		return
+	}
+
+	c.JSON(http.StatusOK, ConfigResponse{
+		Token:     token,
+		ExpiresIn: h.tokenTTL,
+	})
 }
 
 // handleConfigStatus retorna o status da configuração (sem expor token).

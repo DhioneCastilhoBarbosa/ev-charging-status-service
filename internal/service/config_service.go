@@ -42,11 +42,11 @@ func NewConfigService(
 	}
 }
 
-func (s *ConfigService) Configure(ctx context.Context, in ConfigInput) error {
+func (s *ConfigService) Configure(ctx context.Context, in ConfigInput) (*repository.User, error) {
 	// 1. Upsert user (identificado pelo email)
 	user, err := s.usersRepo.UpsertByUsername(ctx, in.Email)
 	if err != nil {
-		return fmt.Errorf("upsert user: %w", err)
+		return nil, fmt.Errorf("upsert user: %w", err)
 	}
 
 	// 2. Login na API de terceiros: body = email, password, recaptchaResponse; header = API-Key
@@ -61,7 +61,7 @@ func (s *ConfigService) Configure(ctx context.Context, in ConfigInput) error {
 
 	loginResp, err := s.intelbrasClient.Login(ctx, loginReq)
 	if err != nil {
-		return fmt.Errorf("login intelbras: %w", err)
+		return nil, fmt.Errorf("login intelbras: %w", err)
 	}
 
 	// 3. Salvar credenciais e token (criptografar senha e api_key se chave definida)
@@ -74,13 +74,13 @@ func (s *ConfigService) Configure(ctx context.Context, in ConfigInput) error {
 	if len(s.encryptionKey) > 0 {
 		encPwd, errEnc := crypto.Encrypt([]byte(in.Password), s.encryptionKey)
 		if errEnc != nil {
-			return fmt.Errorf("encrypt password: %w", errEnc)
+			return nil, fmt.Errorf("encrypt password: %w", errEnc)
 		}
 		creds.APIPassword = encPwd
 		if in.APIKey != nil && *in.APIKey != "" {
 			encKey, errEnc := crypto.Encrypt([]byte(*in.APIKey), s.encryptionKey)
 			if errEnc != nil {
-				return fmt.Errorf("encrypt api_key: %w", errEnc)
+				return nil, fmt.Errorf("encrypt api_key: %w", errEnc)
 			}
 			creds.APIKey = &encKey
 		}
@@ -95,15 +95,17 @@ func (s *ConfigService) Configure(ctx context.Context, in ConfigInput) error {
 	}
 
 	if err := s.credsRepo.Upsert(ctx, creds); err != nil {
-		return fmt.Errorf("upsert credentials: %w", err)
+		return nil, fmt.Errorf("upsert credentials: %w", err)
 	}
 
-	// 4. Salvar webhook
-	if _, err := s.webhookRepo.UpsertForUser(ctx, user.ID, in.WebhookURL); err != nil {
-		return fmt.Errorf("upsert webhook: %w", err)
+	// 4. Salvar webhook apenas quando informado.
+	if in.WebhookURL != "" {
+		if _, err := s.webhookRepo.UpsertForUser(ctx, user.ID, in.WebhookURL); err != nil {
+			return nil, fmt.Errorf("upsert webhook: %w", err)
+		}
 	}
 
-	return nil
+	return user, nil
 }
 
 // ConfigStatus indica se há config e se o token foi salvo (sem expor o token).

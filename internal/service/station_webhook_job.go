@@ -7,6 +7,8 @@ import (
 	"log"
 	"time"
 
+	"github.com/google/uuid"
+
 	"ev-charging-status-service/internal/clients/intelbras"
 	"ev-charging-status-service/internal/repository"
 )
@@ -143,47 +145,57 @@ func NewStationWebhookJob(
 func (j *StationWebhookJob) Run(ctx context.Context) {
 	log.Println("[station-webhook-job] run started")
 
-	creds, err := j.credsRepo.GetFirst(ctx)
+	userIDs, err := j.credsRepo.ListDistinctUserIDs(ctx)
 	if err != nil {
 		log.Printf("[station-webhook-job] no credentials configured (run POST /v1/config first): %v", err)
 		return
 	}
-
-	stations, err := j.stationService.GetStations(ctx)
-	if err != nil {
-		log.Printf("[station-webhook-job] get stations failed: %v", err)
+	if len(userIDs) == 0 {
+		log.Printf("[station-webhook-job] no credentials configured (run POST /v1/config first)")
 		return
 	}
-	log.Printf("[station-webhook-job] got %d stations", len(stations))
 
-	webhooks, err := j.webhookRepo.ListActiveByUserID(ctx, creds.UserID)
+	for _, userID := range userIDs {
+		j.runForUser(ctx, userID)
+	}
+}
+
+func (j *StationWebhookJob) runForUser(ctx context.Context, userID uuid.UUID) {
+	stations, err := j.stationService.GetStationsByUserID(ctx, userID)
 	if err != nil {
-		log.Printf("[station-webhook-job] list webhooks failed: %v", err)
+		log.Printf("[station-webhook-job] get stations failed userId=%s err=%v", userID, err)
+		return
+	}
+	log.Printf("[station-webhook-job] got %d stations userId=%s", len(stations), userID)
+
+	webhooks, err := j.webhookRepo.ListActiveByUserID(ctx, userID)
+	if err != nil {
+		log.Printf("[station-webhook-job] list webhooks failed userId=%s err=%v", userID, err)
 		return
 	}
 	if len(webhooks) == 0 {
-		log.Println("[station-webhook-job] no active webhook for user (check webhookUrl in POST /v1/config)")
+		log.Printf("[station-webhook-job] no active webhook for userId=%s", userID)
 		return
 	}
 	// Um envio por usuário (evita duplicata se houver mais de um webhook ativo).
 	webhooks = webhooks[:1]
 
 	payload := WebhookPayload{
-		UserID:    creds.UserID.String(),
+		UserID:    userID.String(),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Stations:  flattenToWebhookStations(stations),
 	}
 	body, err := buildWebhookPayloadJSON(payload)
 	if err != nil {
-		log.Printf("[station-webhook-job] marshal payload: %v", err)
+		log.Printf("[station-webhook-job] marshal payload userId=%s err=%v", userID, err)
 		return
 	}
 
 	for _, w := range webhooks {
 		if err := j.webhookService.EnqueueEvent(ctx, w, body); err != nil {
-			log.Printf("[station-webhook-job] enqueue webhook id=%s failed", w.ID)
+			log.Printf("[station-webhook-job] enqueue webhook id=%s userId=%s failed", w.ID, userID)
 		} else {
-			log.Printf("[station-webhook-job] webhook enqueued id=%s (sender will POST in up to 30s)", w.ID)
+			log.Printf("[station-webhook-job] webhook enqueued id=%s userId=%s (sender will POST in up to 30s)", w.ID, userID)
 		}
 	}
 }

@@ -42,7 +42,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Faz login na API Move/Intelbras, persiste credenciais e salva a URL para envio do webhook.",
+                "description": "Faz login na API Move/Intelbras, persiste credenciais (criptografadas se ` + "`" + `ENCRYPTION_KEY` + "`" + ` existir). ` + "`" + `webhookUrl` + "`" + ` é opcional. Resposta inclui ` + "`" + `token` + "`" + ` e ` + "`" + `expiresIn` + "`" + ` (segundos) para ` + "`" + `GET /v1/ws?token=` + "`" + ` ou cliente WebSocket.",
                 "consumes": [
                     "application/json"
                 ],
@@ -52,10 +52,10 @@ const docTemplate = `{
                 "tags": [
                     "Configuração"
                 ],
-                "summary": "Configura credenciais e webhook",
+                "summary": "Configura credenciais (e token WebSocket)",
                 "parameters": [
                     {
-                        "description": "email, password, webhookUrl (obrigatório) e apiKey (opcional)",
+                        "description": "email e password (obrigatórios); webhookUrl e apiKey (opcionais)",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -65,8 +65,11 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "204": {
-                        "description": "No content"
+                    "200": {
+                        "description": "token, expiresIn",
+                        "schema": {
+                            "$ref": "#/definitions/api.ConfigResponse"
+                        }
                     },
                     "400": {
                         "description": "invalid request",
@@ -76,6 +79,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "ws token unavailable",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -188,6 +197,120 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/v1/ws": {
+            "get": {
+                "description": "Upgrade HTTP para WebSocket. Envie o JWT em ` + "`" + `?token=` + "`" + ` ou no header ` + "`" + `Authorization: Bearer` + "`" + `. Mensagens são JSON (` + "`" + `userId` + "`" + `, ` + "`" + `stations` + "`" + `, ` + "`" + `timestamp` + "`" + `) no intervalo configurado em ` + "`" + `WS_PUBLISH_INTERVAL_SECONDS` + "`" + `.",
+                "tags": [
+                    "WebSocket"
+                ],
+                "summary": "Conexão WebSocket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "JWT retornado por POST /v1/config ou GET /v1/ws/token",
+                        "name": "token",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "401": {
+                        "description": "missing ou invalid ws token",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/ws/stats": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Conexões ativas, mensagens enviadas, drops por backpressure e erros de escrita.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "WebSocket"
+                ],
+                "summary": "Métricas do hub WebSocket",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.WSHubStats"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/ws/token": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Retorna ` + "`" + `token` + "`" + ` e ` + "`" + `expiresIn` + "`" + ` (segundos) para usar em ` + "`" + `GET /v1/ws?token=` + "`" + ` ou ` + "`" + `ws://.../v1/ws?token=` + "`" + `.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "WebSocket"
+                ],
+                "summary": "Token WebSocket",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Email do usuário (username em ` + "`" + `users` + "`" + `, igual ao POST /v1/config)",
+                        "name": "username",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "token, expiresIn",
+                        "schema": {
+                            "$ref": "#/definitions/api.ConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "username is required",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "user not found / sem credenciais",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "ws token unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -195,8 +318,7 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "email",
-                "password",
-                "webhookUrl"
+                "password"
             ],
             "properties": {
                 "apiKey": {
@@ -210,6 +332,19 @@ const docTemplate = `{
                 },
                 "webhookUrl": {
                     "type": "string"
+                }
+            }
+        },
+        "api.ConfigResponse": {
+            "type": "object",
+            "properties": {
+                "expiresIn": {
+                    "type": "integer",
+                    "example": 300
+                },
+                "token": {
+                    "type": "string",
+                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                 }
             }
         },
@@ -264,6 +399,26 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "api.WSHubStats": {
+            "type": "object",
+            "properties": {
+                "activeUsers": {
+                    "type": "integer"
+                },
+                "droppedByBackpressure": {
+                    "type": "integer"
+                },
+                "messagesSent": {
+                    "type": "integer"
+                },
+                "totalConnections": {
+                    "type": "integer"
+                },
+                "writeErrors": {
+                    "type": "integer"
+                }
+            }
         }
     },
     "securityDefinitions": {
@@ -282,7 +437,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{"https"},
 	Title:            "EV Charging Status API",
-	Description:      "API para configuração e consulta de estações de recarga (Move/Intelbras) e envio por webhook.",
+	Description:      "API para configuração e consulta de estações de recarga (Move/Intelbras), envio opcional por webhook e push periódico por WebSocket (por usuário, via JWT).",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

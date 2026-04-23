@@ -8,6 +8,7 @@ import (
 	"ev-charging-status-service/internal/clients/intelbras"
 	"ev-charging-status-service/internal/crypto"
 	"ev-charging-status-service/internal/repository"
+	"github.com/google/uuid"
 )
 
 type StationService struct {
@@ -35,7 +36,18 @@ func (s *StationService) GetStations(ctx context.Context) ([]intelbras.Flattened
 	if err != nil {
 		return nil, fmt.Errorf("no credentials configured: %w", err)
 	}
+	return s.getStationsWithCreds(ctx, creds)
+}
 
+func (s *StationService) GetStationsByUserID(ctx context.Context, userID uuid.UUID) ([]intelbras.FlattenedChargePoint, error) {
+	creds, err := s.credsRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("no credentials configured for user: %w", err)
+	}
+	return s.getStationsWithCreds(ctx, creds)
+}
+
+func (s *StationService) getStationsWithCreds(ctx context.Context, creds *repository.ThirdPartyCredentials) ([]intelbras.FlattenedChargePoint, error) {
 	// Descriptografar senha e api_key para uso no login (compatível com dados em texto plano).
 	// Só substitui quando o resultado é diferente do valor em DB (evita usar o fallback como senha quando a chave está errada).
 	if len(s.encryptionKey) > 0 {

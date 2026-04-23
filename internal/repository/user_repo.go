@@ -60,3 +60,17 @@ func (r *UserRepository) DeleteByUsername(ctx context.Context, username string) 
 	return err
 }
 
+func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*User, error) {
+	var u User
+	err := r.db.GetContext(ctx, &u, `
+		SELECT id, username, created_at, updated_at
+		FROM users
+		WHERE username = $1
+		LIMIT 1
+	`, username)
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+

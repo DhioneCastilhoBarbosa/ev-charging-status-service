@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"log"
@@ -22,7 +23,9 @@ type WSHandler struct {
 	usersRepo *repository.UserRepository
 	credsRepo *repository.CredentialsRepository
 	hub       *WSHub
-	upgrader  websocket.Upgrader
+	// onConnected, se não-nil, recebe userId (JWT) após Register para enviar snapshot WS.
+	onConnected func(ctx context.Context, userID string)
+	upgrader    websocket.Upgrader
 }
 
 func NewWSHandler(
@@ -32,14 +35,16 @@ func NewWSHandler(
 	usersRepo *repository.UserRepository,
 	credsRepo *repository.CredentialsRepository,
 	hub *WSHub,
+	onConnected func(ctx context.Context, userID string),
 ) *WSHandler {
 	return &WSHandler{
-		apiKey:    apiKey,
-		tokenTTL:  tokenTTL,
-		auth:      auth,
-		usersRepo: usersRepo,
-		credsRepo: credsRepo,
-		hub:       hub,
+		apiKey:      apiKey,
+		tokenTTL:    tokenTTL,
+		auth:        auth,
+		usersRepo:   usersRepo,
+		credsRepo:   credsRepo,
+		hub:         hub,
+		onConnected: onConnected,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -52,20 +57,7 @@ func (h *WSHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.GET("/ws/stats", h.handleStats)
 }
 
-// handleToken emite JWT curto para handshake do WebSocket (alternativa ao token retornado em POST /v1/config).
-//
-//	@Summary		Token WebSocket
-//	@Description	Retorna `token` e `expiresIn` (segundos) para usar em `GET /v1/ws?token=` ou `ws://.../v1/ws?token=`.
-//	@Tags			WebSocket
-//	@Produce		json
-//	@Param			username	query		string	true	"Email do usuário (username em `users`, igual ao POST /v1/config)"
-//	@Success		200			{object}	ConfigResponse	"token, expiresIn"
-//	@Failure		400			{object}	ErrorResponse	"username is required"
-//	@Failure		401			{object}	ErrorResponse	"unauthorized"
-//	@Failure		404			{object}	ErrorResponse	"user not found / sem credenciais"
-//	@Failure		500			{object}	ErrorResponse	"ws token unavailable"
-//	@Security		ApiKeyAuth
-//	@Router			/v1/ws/token [get]
+// handleToken emite JWT curto para o cliente (não documentado no OpenAPI).
 func (h *WSHandler) handleToken(c *gin.Context) {
 	if h.apiKey != "" && c.GetHeader("X-API-Key") != h.apiKey {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
@@ -98,19 +90,13 @@ func (h *WSHandler) handleToken(c *gin.Context) {
 	})
 }
 
-// handleConnect faz upgrade para WebSocket; só entrega mensagens ao userId do JWT.
-//
-//	@Summary		Conexão WebSocket
-//	@Description	Upgrade HTTP para WebSocket. Envie o JWT em `?token=` ou no header `Authorization: Bearer`. Mensagens são JSON (`userId`, `stations`, `timestamp`) no intervalo configurado em `WS_PUBLISH_INTERVAL_SECONDS`.
-//	@Tags			WebSocket
-//	@Param			token	query		string	false	"JWT retornado por POST /v1/config ou GET /v1/ws/token"
-//	@Failure		401		{object}	ErrorResponse	"missing ou invalid ws token"
-//	@Router			/v1/ws [get]
+// handleConnect faz upgrade para WebSocket (não documentado no OpenAPI).
 func (h *WSHandler) handleConnect(c *gin.Context) {
 	token := strings.TrimSpace(c.Query("token"))
 	if token == "" {
-		if authHeader := c.GetHeader("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
-			token = strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+		authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+		if len(authHeader) > 7 && strings.EqualFold(authHeader[:7], "bearer ") {
+			token = strings.TrimSpace(authHeader[7:])
 		}
 	}
 	if token == "" {
@@ -139,20 +125,20 @@ func (h *WSHandler) handleConnect(c *gin.Context) {
 	h.hub.Register(client)
 	log.Printf("[ws] connected connectionId=%s userId=%s activeUserConnections=%d", client.connectionID, client.userID, h.hub.ActiveConnections(client.userID))
 
+	if h.onConnected != nil {
+		uid := client.userID
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			h.onConnected(ctx, uid)
+		}()
+	}
+
 	go client.writePump()
 	client.readPump()
 }
 
-// handleStats retorna métricas do hub WebSocket (operacional).
-//
-//	@Summary		Métricas do hub WebSocket
-//	@Description	Conexões ativas, mensagens enviadas, drops por backpressure e erros de escrita.
-//	@Tags			WebSocket
-//	@Produce		json
-//	@Success		200	{object}	WSHubStats
-//	@Failure		401	{object}	ErrorResponse	"unauthorized"
-//	@Security		ApiKeyAuth
-//	@Router			/v1/ws/stats [get]
+// handleStats retorna métricas do hub (não documentado no OpenAPI).
 func (h *WSHandler) handleStats(c *gin.Context) {
 	if h.apiKey != "" && c.GetHeader("X-API-Key") != h.apiKey {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})

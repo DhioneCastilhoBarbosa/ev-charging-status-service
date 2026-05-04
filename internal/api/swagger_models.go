@@ -10,7 +10,7 @@ type ErrorResponse struct {
 	Error string `json:"error" example:"unauthorized"`
 }
 
-// ConfigResponse é o JWT curto para conectar ao WebSocket (POST /v1/config ou GET /v1/ws/token).
+// ConfigResponse contém o JWT de sessão e a validade em segundos (resposta de POST /v1/config).
 type ConfigResponse struct {
 	Token     string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
 	ExpiresIn int    `json:"expiresIn" example:"300"`
@@ -28,4 +28,34 @@ type ConfigStatusResponse struct {
 type StationsResponse struct {
 	// Estrutura varia conforme payload da API Move/Intelbras.
 	Stations []map[string]interface{} `json:"stations"`
+}
+
+// StationsPushResponse é o JSON retornado por POST /v1/stations e enviado pelo webhook periódico de estações.
+type StationsPushResponse struct {
+	UserID    string               `json:"userId" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Timestamp string               `json:"timestamp" example:"2026-05-04T12:00:00Z"`
+	Stations  []StationsPushStation `json:"stations"`
+}
+
+// StationsPushStation representa uma estação no payload de estações.
+type StationsPushStation struct {
+	ChargeBoxID       string                 `json:"chargeBoxId"`
+	Description       string                 `json:"description"`
+	OcppProtocol      string                 `json:"ocppProtocol"`
+	ChargePointModel  string                 `json:"chargePointModel"`
+	ChargePointVendor string                 `json:"chargePointVendor"`
+	UUID              string                 `json:"uuid"`
+	FwVersion         string                 `json:"fwVersion"`
+	Connectors        []StationsPushConnector `json:"connectors"`
+}
+
+// StationsPushConnector representa um conector no payload de estações.
+type StationsPushConnector struct {
+	Status        string `json:"status"`
+	ErroInfo      string `json:"erroInfo"`
+	PowerMax      int    `json:"powerMax"`
+	ErrorCode     string `json:"errorCode"`
+	ConnectorID   int    `json:"connectorId"`
+	ConnectorPK   int64  `json:"connectorPk"`
+	ConnectorType string `json:"connectorType"`
 }

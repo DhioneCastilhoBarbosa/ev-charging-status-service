@@ -2,7 +2,7 @@
 //
 //	@title			EV Charging Status API
 //	@version		1.0
-//	@description	API para configuração e consulta de estações de recarga (Move/Intelbras), envio opcional por webhook e push periódico por WebSocket (por usuário, via JWT).
+//	@description	API para configuração e consulta de estações de recarga (Move/Intelbras), `POST /v1/stations` com JWT, webhook opcional no worker. Rotas em tempo real fora desta especificação permanecem disponíveis no serviço.
 //	@host			defense.intelbras-cve-pro.com.br
 //	@schemes		https
 //	@BasePath		/

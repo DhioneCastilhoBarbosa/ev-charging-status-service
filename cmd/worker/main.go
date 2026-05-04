@@ -23,7 +23,8 @@ func main() {
 	webhookRepo := repository.NewWebhookRepository(db)
 	webhookEventRepo := repository.NewWebhookEventRepository(db)
 
-	intelbrasClient := intelbras.NewClient(cfg.IntelbrasBaseURL, 30*time.Second)
+	intelbrasClient := intelbras.NewClient(cfg.IntelbrasBaseURL, 30*time.Second).
+		WithChargePointListRateLimit(cfg.IntelbrasChargePointMaxRPM)
 	stationService := service.NewStationService(credsRepo, intelbrasClient, cfg.EncryptionKey)
 	webhookService := service.NewWebhookService(webhookRepo, webhookEventRepo)
 	stationWebhookJob := service.NewStationWebhookJob(credsRepo, stationService, webhookRepo, webhookService)

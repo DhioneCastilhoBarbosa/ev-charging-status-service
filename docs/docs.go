@@ -42,7 +42,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Faz login na API Move/Intelbras, persiste credenciais (criptografadas se ` + "`" + `ENCRYPTION_KEY` + "`" + ` existir). ` + "`" + `webhookUrl` + "`" + ` é opcional. Resposta inclui ` + "`" + `token` + "`" + ` e ` + "`" + `expiresIn` + "`" + ` (segundos) para ` + "`" + `GET /v1/ws?token=` + "`" + ` ou cliente WebSocket.",
+                "description": "Faz login na API Move/Intelbras, persiste credenciais (criptografadas se ` + "`" + `ENCRYPTION_KEY` + "`" + ` existir). ` + "`" + `webhookUrl` + "`" + ` é opcional. Resposta inclui ` + "`" + `token` + "`" + ` (JWT) e ` + "`" + `expiresIn` + "`" + ` (segundos, ver ` + "`" + `WS_TOKEN_TTL_SECONDS` + "`" + `). Use o JWT no header ` + "`" + `Authorization: Bearer` + "`" + ` em ` + "`" + `POST /v1/stations` + "`" + ` e ` + "`" + `DELETE /v1/config` + "`" + `. O JWT não substitui ` + "`" + `X-API-Key` + "`" + ` nas rotas que exigem esse header.",
                 "consumes": [
                     "application/json"
                 ],
@@ -52,7 +52,7 @@ const docTemplate = `{
                 "tags": [
                     "Configuração"
                 ],
-                "summary": "Configura credenciais (e token WebSocket)",
+                "summary": "Configura credenciais (e token JWT)",
                 "parameters": [
                     {
                         "description": "email e password (obrigatórios); webhookUrl e apiKey (opcionais)",
@@ -84,7 +84,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "ws token unavailable",
+                        "description": "token unavailable",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -103,14 +103,20 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Apaga o usuário indicado e todos os dados relacionados (credenciais, webhooks, eventos) via cascade.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "Apaga o usuário identificado pelo JWT retornado em ` + "`" + `POST /v1/config` + "`" + ` (header ` + "`" + `Authorization: Bearer` + "`" + `) e todos os dados relacionados (credenciais, webhooks, eventos) via cascade.",
                 "tags": [
                     "Configuração"
                 ],
                 "summary": "Remove configuração e dados do usuário",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bearer \u0026lt;JWT\u0026gt;",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "204": {
                         "description": "No content"
@@ -162,25 +168,52 @@ const docTemplate = `{
             }
         },
         "/v1/stations": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Retorna a lista de estações de recarga (e conectores) da API Move/Intelbras, usando o token salvo ou renovando-o.",
+                "description": "Valida o JWT (header ` + "`" + `Authorization: Bearer` + "`" + `) retornado por ` + "`" + `POST /v1/config` + "`" + ` e confere ` + "`" + `apiKey` + "`" + ` do JSON com a salva no configure. O corpo da resposta segue o mesmo esquema do payload periódico de webhook de estações.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Estação"
                 ],
-                "summary": "Lista estações",
+                "summary": "Lista estações (Authorization: Bearer + apiKey no corpo)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Bearer \u0026lt;JWT\u0026gt;",
+                        "name": "Authorization",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "apiKey (igual ao /v1/config; use string vazia ou omita se não houver apiKey na config)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.StationsPostRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "stations: array de estações",
+                        "description": "userId, timestamp, stations",
                         "schema": {
-                            "$ref": "#/definitions/api.StationsResponse"
+                            "$ref": "#/definitions/api.StationsPushResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/api.ErrorResponse"
                         }
                     },
                     "401": {
@@ -191,120 +224,6 @@ const docTemplate = `{
                     },
                     "502": {
                         "description": "stations unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/ws": {
-            "get": {
-                "description": "Upgrade HTTP para WebSocket. Envie o JWT em ` + "`" + `?token=` + "`" + ` ou no header ` + "`" + `Authorization: Bearer` + "`" + `. Mensagens são JSON (` + "`" + `userId` + "`" + `, ` + "`" + `stations` + "`" + `, ` + "`" + `timestamp` + "`" + `) no intervalo configurado em ` + "`" + `WS_PUBLISH_INTERVAL_SECONDS` + "`" + `.",
-                "tags": [
-                    "WebSocket"
-                ],
-                "summary": "Conexão WebSocket",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "JWT retornado por POST /v1/config ou GET /v1/ws/token",
-                        "name": "token",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "401": {
-                        "description": "missing ou invalid ws token",
-                        "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/ws/stats": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Conexões ativas, mensagens enviadas, drops por backpressure e erros de escrita.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "WebSocket"
-                ],
-                "summary": "Métricas do hub WebSocket",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.WSHubStats"
-                        }
-                    },
-                    "401": {
-                        "description": "unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/ws/token": {
-            "get": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
-                "description": "Retorna ` + "`" + `token` + "`" + ` e ` + "`" + `expiresIn` + "`" + ` (segundos) para usar em ` + "`" + `GET /v1/ws?token=` + "`" + ` ou ` + "`" + `ws://.../v1/ws?token=` + "`" + `.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "WebSocket"
-                ],
-                "summary": "Token WebSocket",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Email do usuário (username em ` + "`" + `users` + "`" + `, igual ao POST /v1/config)",
-                        "name": "username",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "token, expiresIn",
-                        "schema": {
-                            "$ref": "#/definitions/api.ConfigResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "username is required",
-                        "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "user not found / sem credenciais",
-                        "schema": {
-                            "$ref": "#/definitions/api.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "ws token unavailable",
                         "schema": {
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
@@ -387,36 +306,89 @@ const docTemplate = `{
                 }
             }
         },
-        "api.StationsResponse": {
+        "api.StationsPostRequest": {
             "type": "object",
             "properties": {
-                "stations": {
-                    "description": "Estrutura varia conforme payload da API Move/Intelbras.",
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": true
-                    }
+                "apiKey": {
+                    "type": "string",
+                    "example": "sua-api-key-intelbras"
                 }
             }
         },
-        "api.WSHubStats": {
+        "api.StationsPushConnector": {
             "type": "object",
             "properties": {
-                "activeUsers": {
+                "connectorId": {
                     "type": "integer"
                 },
-                "droppedByBackpressure": {
+                "connectorPk": {
                     "type": "integer"
                 },
-                "messagesSent": {
+                "connectorType": {
+                    "type": "string"
+                },
+                "erroInfo": {
+                    "type": "string"
+                },
+                "errorCode": {
+                    "type": "string"
+                },
+                "powerMax": {
                     "type": "integer"
                 },
-                "totalConnections": {
-                    "type": "integer"
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.StationsPushResponse": {
+            "type": "object",
+            "properties": {
+                "stations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.StationsPushStation"
+                    }
                 },
-                "writeErrors": {
-                    "type": "integer"
+                "timestamp": {
+                    "type": "string",
+                    "example": "2026-05-04T12:00:00Z"
+                },
+                "userId": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "api.StationsPushStation": {
+            "type": "object",
+            "properties": {
+                "chargeBoxId": {
+                    "type": "string"
+                },
+                "chargePointModel": {
+                    "type": "string"
+                },
+                "chargePointVendor": {
+                    "type": "string"
+                },
+                "connectors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.StationsPushConnector"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "fwVersion": {
+                    "type": "string"
+                },
+                "ocppProtocol": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
                 }
             }
         }
@@ -437,7 +409,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{"https"},
 	Title:            "EV Charging Status API",
-	Description:      "API para configuração e consulta de estações de recarga (Move/Intelbras), envio opcional por webhook e push periódico por WebSocket (por usuário, via JWT).",
+	Description:      "API para configuração e consulta de estações de recarga (Move/Intelbras), `POST /v1/stations` com JWT, webhook opcional no worker. Rotas em tempo real fora desta especificação permanecem disponíveis no serviço.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

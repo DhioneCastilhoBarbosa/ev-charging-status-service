@@ -48,8 +48,8 @@ flowchart TB
             R[Router Gin]
             R --> Health["GET /health"]
             R --> V1["/v1 (rate limit,\nX-API-Key)"]
-            V1 --> Config["ConfigHandler\nPOST /config (+token WS)\nGET /config/status\nDELETE /config"]
-            V1 --> Stations["StationsHandler\nGET /stations"]
+            V1 --> Config["ConfigHandler\nPOST /config (+token WS)\nGET /config/status\nDELETE /config (Bearer)"]
+            V1 --> Stations["StationsHandler\nPOST /stations"]
             V1 --> WS["WebSocket\nGET /ws/token\nGET /ws"]
             WSPub["WSStationPublisher\nintervalo env"]
             WSPub --> WS
@@ -97,7 +97,7 @@ flowchart TB
 
 | Componente | Descrição |
 |------------|-----------|
-| **API** | Servidor HTTP (porta **8085**). Expõe `/health`, `POST /v1/config` (retorna token WS), `GET /v1/config/status`, `DELETE /v1/config`, `GET /v1/stations`, `GET /v1/ws/token`, `GET /v1/ws` (upgrade WebSocket), `GET /v1/ws/stats`. Rotas `/v1/*` com `X-API-Key` (se `API_KEY` definida) e rate limit (15 req/min por IP). |
+| **API** | Servidor HTTP (porta **8085**). Expõe `/health`, `POST /v1/config`, `GET /v1/config/status`, `DELETE /v1/config` (Bearer JWT), `POST /v1/stations` (Bearer JWT + `apiKey` no corpo), `GET /v1/ws/token`, `GET /v1/ws` (upgrade WebSocket, **só JWT**, sem `X-API-Key`), `GET /v1/ws/stats`. Rotas HTTP `/v1/*` (exceto handshake `/v1/ws`) usam `X-API-Key` se `API_KEY` definida; rate limit 15 req/min por IP no grupo `/v1`. |
 | **Worker** | Processo em background. A cada **3 minutos** executa o job: busca estações na Intelbras **por usuário** e enfileira webhook só para quem tem URL ativa. A cada **30 segundos** o sender processa `webhook_events` e faz POST com retentativas. |
 | **Push WS (API)** | No mesmo processo da API, publicador envia JSON de estações **por `user_id`** no intervalo `WS_PUBLISH_INTERVAL_SECONDS` (default 180 s). Uma credencial por usuário no banco (migration `003`). |
 | **PostgreSQL** | Armazena usuários, credenciais (senha e API key criptografadas com `ENCRYPTION_KEY`), webhooks e fila de eventos (`webhook_events`). |
@@ -109,14 +109,16 @@ flowchart TB
 1. **Configuração**  
    `POST /v1/config` com email, senha e, se quiser, `apiKey` (Intelbras) e `webhookUrl`. A API faz login na Move/Intelbras e persiste credenciais (criptografadas se `ENCRYPTION_KEY` estiver definida). A resposta inclui **`token` e `expiresIn`** para abrir o WebSocket sem chamar `/v1/ws/token`.
 
-2. **Consulta de estações**  
-   `GET /v1/stations` usa credenciais salvas (token Intelbras renovado quando necessário) e devolve estações/conectores.
+2. **Consulta de estações (HTTP)**  
+   `POST /v1/stations` com header `Authorization: Bearer <JWT>` (o mesmo do WebSocket) e corpo JSON `{"apiKey":"..."}` igual ao configurado em `/v1/config` (string vazia se não houver). Resposta: mesmo JSON do push WS (`userId`, `timestamp`, `stations`). Exige `X-API-Key` da API quando configurado.
 
 3. **Webhook periódico (opcional)**  
    Se existir webhook ativo para o usuário, o worker a cada **3 min** enfileira um evento; o sender envia POST com retentativas e backoff (429/503 e `Retry-After`).
 
 4. **WebSocket**  
-   Cliente conecta em `ws://HOST:8085/v1/ws?token=JWT`. O servidor associa a conexão ao `user_id` do JWT e envia mensagens JSON (`userId`, `stations`, `timestamp`) só para esse usuário, no intervalo `WS_PUBLISH_INTERVAL_SECONDS`. Token inválido/expirado falha no handshake; conexão já aberta não é revalidada pelo TTL até reconectar.
+   - **Handshake:** `GET /v1/ws` com `?token=<JWT>` **ou** header `Authorization: Bearer <JWT>`. **Não** enviar `X-API-Key` nesta URL — apenas o JWT emitido por `POST /v1/config` ou `GET /v1/ws/token?username=`. Token inválido ou expirado (`WS_TOKEN_TTL_SECONDS`) → **401** JSON, sem upgrade.  
+   - **Dados:** após o upgrade, o servidor envia **frames de texto** JSON no intervalo `WS_PUBLISH_INTERVAL_SECONDS` (padrão **180 s**), com um ciclo **logo na subida** da API. O payload é o mesmo do webhook/`POST /v1/stations`: `userId`, `stations`, `timestamp` (RFC3339). Só entram no ciclo usuários com credenciais; cada conexão recebe apenas o lote do `userId` do seu JWT. Se a Intelbras falhar naquele ciclo para aquele usuário, nada é enviado naquele ciclo.  
+   - **Transporte:** Ping do servidor a cada **25 s** (responder com Pong); fila de **32** mensagens por conexão — cliente lento pode ser desconectado (backpressure). O servidor não revalida o JWT depois do handshake até o cliente reconectar.
 
 ---
 
@@ -186,13 +188,13 @@ go run cmd/worker/main.go
 | Método | Rota | Descrição |
 |--------|------|-----------|
 | GET | `/health` | Health check (sem autenticação). |
-| POST | `/v1/config` | Configura credenciais (body: email e password obrigatórios; webhookUrl e apiKey opcionais) e já retorna token WS (`token`, `expiresIn`). Requer `X-API-Key` se `API_KEY` estiver definida. |
-| DELETE | `/v1/config` | Remove o usuário informado (via body `email`/`username`) e todos os dados relacionados (credenciais, webhooks, eventos). |
-| GET | `/v1/config/status` | Retorna se há configuração e se o token está presente (sem expor o token). |
-| GET | `/v1/stations` | Lista estações da API de terceiros (usa token salvo ou renova). |
-| GET | `/v1/ws/token?username={email}` | Emite token curto para handshake do WebSocket do usuário. Requer `X-API-Key`. |
-| GET | `/v1/ws?token={jwt}` | Abre conexão WebSocket e recebe somente eventos do usuário do token. |
-| GET | `/v1/ws/stats` | Exibe estatísticas básicas de operação do hub WS (conexões, drops, erros de escrita). |
+| POST | `/v1/config` | Configura credenciais (email e password obrigatórios; `webhookUrl` e `apiKey` opcionais). Resposta: `token` (JWT WS) e `expiresIn`. Requer `X-API-Key` se `API_KEY` estiver definida. |
+| DELETE | `/v1/config` | Remove o usuário identificado pelo JWT: header `Authorization: Bearer <token>`. Requer `X-API-Key` se `API_KEY` estiver definida. Resposta 204. |
+| GET | `/v1/config/status` | Retorna se há configuração e se o token Intelbras está presente (sem expor tokens). Requer `X-API-Key` quando configurado. |
+| POST | `/v1/stations` | Corpo `{"apiKey":"..."}`; header `Authorization: Bearer <JWT WS>`. Retorna `userId`, `timestamp`, `stations` (igual ao push WebSocket). Requer `X-API-Key` quando configurado. |
+| GET | `/v1/ws/token?username={email}` | Emite JWT para handshake WS (`token`, `expiresIn`). O `username` é o e-mail já configurado. Requer `X-API-Key` quando configurado. |
+| GET | `/v1/ws` | Upgrade para WebSocket. Autenticação **somente** com `?token=` ou `Authorization: Bearer` (sem `X-API-Key`). Ver seção *Fluxo de dados* para payload e intervalo. |
+| GET | `/v1/ws/stats` | Métricas do hub WS (conexões, mensagens, drops por backpressure). Requer `X-API-Key` quando configurado. |
 
 Respostas de erro usam mensagens genéricas (`invalid request`, `configuration failed`, `stations unavailable`, etc.); o detalhe é logado no servidor.
 
@@ -231,7 +233,8 @@ swag init -g cmd/api/main.go -o docs
 - **WS_JWT_SECRET**: Assinatura do JWT do WebSocket; se vazio, usa `API_KEY` como fallback (recomenda-se segredo dedicado em produção).  
 - **ENCRYPTION_KEY**: Criptografia AES-256-GCM para senha e API key da Intelbras no banco.  
 - **Rate limit**: 15 requisições/minuto por IP no grupo `/v1`.  
-- **Isolamento WS**: Roteamento por `user_id` extraído do JWT; cada mensagem enviada pelo hub usa o `user_id` da credencial no banco.  
+- **Isolamento WS**: O hub só encaminha para conexões cujo JWT contém o mesmo `userId`; o payload é montado com `GetStationsByUserID` (credencial daquele usuário).  
+- **Handshake WS**: `/v1/ws` não valida `X-API-Key`; quem protege a sessão é o JWT (curta duração).  
 - **Erros**: Respostas 4xx/5xx com mensagens genéricas; corpo de erro do login de terceiros não é exposto ao cliente.  
 - **Logs**: URL completa do webhook e dados sensíveis não são logados.
 

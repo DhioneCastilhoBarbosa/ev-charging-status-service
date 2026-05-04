@@ -8,6 +8,8 @@ import (
 	"ev-charging-status-service/internal/clients/intelbras"
 	"ev-charging-status-service/internal/crypto"
 	"ev-charging-status-service/internal/repository"
+
+	"github.com/google/uuid"
 )
 
 type ConfigService struct {
@@ -151,5 +153,13 @@ func (s *ConfigService) DeleteUserByEmail(ctx context.Context, email string) err
 		return nil
 	}
 	return s.usersRepo.DeleteByUsername(ctx, email)
+}
+
+// DeleteUserByID remove o usuário pelo id e todos os dados relacionados (cascade).
+func (s *ConfigService) DeleteUserByID(ctx context.Context, userID uuid.UUID) error {
+	if userID == uuid.Nil {
+		return nil
+	}
+	return s.usersRepo.DeleteByID(ctx, userID)
 }
 

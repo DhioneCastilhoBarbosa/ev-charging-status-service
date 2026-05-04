@@ -70,6 +70,11 @@ type FlattenedChargePoint struct {
 // GetChargePointList faz GET na rota de estações com headers Platform, Authorization e Accept.
 // Retorna a lista de charge points com os campos pedidos; conectores incluem status do lastStatus.
 func (c *Client) GetChargePointList(ctx context.Context, accessToken string) (*ChargePointListResponse, error) {
+	if c.chargePointLimiter != nil {
+		if err := c.chargePointLimiter.Wait(ctx); err != nil {
+			return nil, err
+		}
+	}
 	url := c.baseURL + chargePointListPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

@@ -2,14 +2,20 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"ev-charging-status-service/internal/clients/intelbras"
 	"ev-charging-status-service/internal/crypto"
 	"ev-charging-status-service/internal/repository"
+
 	"github.com/google/uuid"
 )
+
+// ErrIntelbrasAPIKeyMismatch indica que a apiKey do cliente não bate com a salva em third_party_credentials.
+var ErrIntelbrasAPIKeyMismatch = errors.New("intelbras api key mismatch")
 
 type StationService struct {
 	credsRepo       *repository.CredentialsRepository
@@ -47,20 +53,53 @@ func (s *StationService) GetStationsByUserID(ctx context.Context, userID uuid.UU
 	return s.getStationsWithCreds(ctx, creds)
 }
 
-func (s *StationService) getStationsWithCreds(ctx context.Context, creds *repository.ThirdPartyCredentials) ([]intelbras.FlattenedChargePoint, error) {
-	// Descriptografar senha e api_key para uso no login (compatível com dados em texto plano).
-	// Só substitui quando o resultado é diferente do valor em DB (evita usar o fallback como senha quando a chave está errada).
-	if len(s.encryptionKey) > 0 {
-		if dec, _ := crypto.Decrypt(creds.APIPassword, s.encryptionKey); len(dec) > 0 && string(dec) != creds.APIPassword {
-			creds.APIPassword = string(dec)
-		}
-		if creds.APIKey != nil {
-			if dec, _ := crypto.Decrypt(*creds.APIKey, s.encryptionKey); len(dec) > 0 && string(dec) != *creds.APIKey {
-				k := string(dec)
-				creds.APIKey = &k
-			}
+// VerifyIntelbrasAPIKeyForUser compara a apiKey informada pelo cliente com a armazenada para o usuário (após descriptografar se necessário).
+func (s *StationService) VerifyIntelbrasAPIKeyForUser(ctx context.Context, userID uuid.UUID, clientAPIKey string) error {
+	creds, err := s.credsRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	s.decryptCredsInPlace(creds)
+	stored := ""
+	if creds.APIKey != nil {
+		stored = *creds.APIKey
+	}
+	if strings.TrimSpace(clientAPIKey) != stored {
+		return ErrIntelbrasAPIKeyMismatch
+	}
+	return nil
+}
+
+// BuildStationsPushPayload monta o mesmo JSON que o WebSocket envia (userId, timestamp, stations).
+func (s *StationService) BuildStationsPushPayload(ctx context.Context, userID uuid.UUID) (*WebhookPayload, error) {
+	list, err := s.GetStationsByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return &WebhookPayload{
+		UserID:    userID.String(),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Stations:  flattenToWebhookStations(list),
+	}, nil
+}
+
+func (s *StationService) decryptCredsInPlace(creds *repository.ThirdPartyCredentials) {
+	if len(s.encryptionKey) == 0 {
+		return
+	}
+	if dec, _ := crypto.Decrypt(creds.APIPassword, s.encryptionKey); len(dec) > 0 && string(dec) != creds.APIPassword {
+		creds.APIPassword = string(dec)
+	}
+	if creds.APIKey != nil {
+		if dec, _ := crypto.Decrypt(*creds.APIKey, s.encryptionKey); len(dec) > 0 && string(dec) != *creds.APIKey {
+			k := string(dec)
+			creds.APIKey = &k
 		}
 	}
+}
+
+func (s *StationService) getStationsWithCreds(ctx context.Context, creds *repository.ThirdPartyCredentials) ([]intelbras.FlattenedChargePoint, error) {
+	s.decryptCredsInPlace(creds)
 
 	token := ""
 	if creds.AccessToken != nil {

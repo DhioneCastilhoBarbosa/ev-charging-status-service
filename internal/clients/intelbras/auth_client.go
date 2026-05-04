@@ -14,11 +14,15 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	// chargePointLimiter limita GET /chargepoints (todas as chamadas no mesmo *Client compartilham o bucket).
+	chargePointLimiter *rate.Limiter
 }
 
 // LoginRequest é o body da API de terceiros (Move/Intelbras).
@@ -43,6 +47,18 @@ func NewClient(baseURL string, timeout time.Duration) *Client {
 			Timeout: timeout,
 		},
 	}
+}
+
+// WithChargePointListRateLimit retorna um cliente que limita GetChargePointList a requestsPerMinute (média).
+// requestsPerMinute <= 0 desativa o limite. burst 1 reduz picos contra o teto da API.
+func (c *Client) WithChargePointListRateLimit(requestsPerMinute int) *Client {
+	nc := *c
+	if requestsPerMinute <= 0 {
+		nc.chargePointLimiter = nil
+		return &nc
+	}
+	nc.chargePointLimiter = rate.NewLimiter(rate.Limit(float64(requestsPerMinute))/60.0, 1)
+	return &nc
 }
 
 func (c *Client) Login(ctx context.Context, req LoginRequest) (*LoginResponse, error) {

@@ -38,7 +38,8 @@ func SetupRoutes(db *sqlx.DB, cfg config.Config) *gin.Engine {
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// Dependências de domínio
-	intelbrasClient := intelbras.NewClient(cfg.IntelbrasBaseURL, 30*time.Second)
+	intelbrasClient := intelbras.NewClient(cfg.IntelbrasBaseURL, 30*time.Second).
+		WithChargePointListRateLimit(cfg.IntelbrasChargePointMaxRPM)
 
 	userRepo := repository.NewUserRepository(db)
 	credsRepo := repository.NewCredentialsRepository(db)
@@ -49,9 +50,13 @@ func SetupRoutes(db *sqlx.DB, cfg config.Config) *gin.Engine {
 	configHandler := NewConfigHandler(configService, wsAuth, cfg.APIKey, cfg.WSTokenTTL)
 
 	stationService := service.NewStationService(credsRepo, intelbrasClient, cfg.EncryptionKey)
-	stationsHandler := NewStationsHandler(stationService, cfg.APIKey)
+	stationsHandler := NewStationsHandler(stationService, wsAuth, cfg.APIKey)
 	wsHub := NewWSHub()
-	wsHandler := NewWSHandler(cfg.APIKey, cfg.WSTokenTTL, wsAuth, userRepo, credsRepo, wsHub)
+	wsStatusStore := service.NewInMemoryConnectorStatusStore()
+	wsPublisher := service.NewWSStationPublisher(credsRepo, stationService, wsHub, wsStatusStore)
+	wsHandler := NewWSHandler(cfg.APIKey, cfg.WSTokenTTL, wsAuth, userRepo, credsRepo, wsHub, func(ctx context.Context, userID string) {
+		wsPublisher.OnWebSocketConnected(ctx, userID)
+	})
 
 	v1 := router.Group("/v1")
 	v1.Use(RateLimitMiddleware(0.25, 10)) // 15 req/min por IP, burst 10
@@ -59,9 +64,8 @@ func SetupRoutes(db *sqlx.DB, cfg config.Config) *gin.Engine {
 	stationsHandler.RegisterRoutes(v1)
 	wsHandler.RegisterRoutes(v1)
 
-	// Publicador WS roda no processo da API para alimentar conexões em memória por usuário.
-	wsPublisher := service.NewWSStationPublisher(credsRepo, stationService, wsHub)
-	go wsPublisher.Run(context.Background(), time.Duration(cfg.WSPublishIntervalSeconds)*time.Second)
+	// Publicador WS: poll periódico; envia só se connectors[].status mudou (store em memória).
+	go wsPublisher.Run(context.Background(), time.Duration(cfg.WSStationPollSeconds())*time.Second)
 
 	return router
 }

@@ -1,4 +1,3 @@
-
 package config
 
 import (
@@ -16,13 +15,14 @@ type Config struct {
 	IntelbrasBaseURL string
 	// IntelbrasChargePointMaxRPM: máximo de GET /chargepoints por minuto neste processo (0 = sem limite). Default 55.
 	IntelbrasChargePointMaxRPM int
-	APIKey           string
-	EncryptionKey    []byte
-	WSJWTSecret      []byte
-	WSTokenTTL       int
-	WSPublishIntervalSeconds int
-	// WSStationPollIntervalSeconds, se > 0, define o poll à API externa para o publisher WS; senão usa WSPublishIntervalSeconds.
-	WSStationPollIntervalSeconds int
+	APIKey                     string
+	EncryptionKey              []byte
+	WSJWTSecret                []byte
+	WSTokenTTL                 int
+	// CSMSSTOMPEnabled: assina /topic/status/chargeBox/{uuid} no CSMS e publica mudanças no WebSocket (default true).
+	CSMSSTOMPEnabled bool
+	// CSMSSockJSPrefix: prefixo SockJS no host Move (default /ws).
+	CSMSSockJSPrefix string
 }
 
 func Load() Config {
@@ -38,44 +38,33 @@ func Load() Config {
 			wsTTLSec = parsed
 		}
 	}
-	// WS_PUBLISH_INTERVAL_SECONDS: fallback do poll WS quando WS_STATION_POLL_INTERVAL_SECONDS não está definido.
-	wsPublishIntervalSec := 180
-	if raw := strings.TrimSpace(os.Getenv("WS_PUBLISH_INTERVAL_SECONDS")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			wsPublishIntervalSec = parsed
-		}
-	}
-	wsStationPollSec := 0
-	if raw := strings.TrimSpace(os.Getenv("WS_STATION_POLL_INTERVAL_SECONDS")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			wsStationPollSec = parsed
-		}
-	}
 	intelbrasChargePointMaxRPM := 55
 	if raw := strings.TrimSpace(os.Getenv("INTELBRAS_CHARGEPOINT_MAX_RPM")); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil {
 			intelbrasChargePointMaxRPM = parsed
 		}
 	}
+	csmsStompEnabled := true
+	if v := strings.TrimSpace(os.Getenv("CSMS_STATUS_STOMP_ENABLED")); v != "" {
+		switch strings.ToLower(v) {
+		case "0", "false", "no", "off":
+			csmsStompEnabled = false
+		case "1", "true", "yes", "on":
+			csmsStompEnabled = true
+		}
+	}
+	csmsSockPrefix := strings.TrimSpace(os.Getenv("CSMS_SOCKJS_PREFIX"))
 	return Config{
-		PostgresURL:      os.Getenv("POSTGRES_URL"),
-		RedisAddr:        os.Getenv("REDIS_ADDR"),
-		KafkaBroker:      os.Getenv("KAFKA_BROKER"),
+		PostgresURL:                os.Getenv("POSTGRES_URL"),
+		RedisAddr:                  os.Getenv("REDIS_ADDR"),
+		KafkaBroker:                os.Getenv("KAFKA_BROKER"),
 		IntelbrasBaseURL:           os.Getenv("INTELBRAS_BASE_URL"),
 		IntelbrasChargePointMaxRPM: intelbrasChargePointMaxRPM,
-		APIKey:           os.Getenv("API_KEY"),
-		EncryptionKey:    encKey,
-		WSJWTSecret:      []byte(wsSecret),
-		WSTokenTTL:                   wsTTLSec,
-		WSPublishIntervalSeconds:     wsPublishIntervalSec,
-		WSStationPollIntervalSeconds: wsStationPollSec,
+		APIKey:                     os.Getenv("API_KEY"),
+		EncryptionKey:              encKey,
+		WSJWTSecret:                []byte(wsSecret),
+		WSTokenTTL:                 wsTTLSec,
+		CSMSSTOMPEnabled:           csmsStompEnabled,
+		CSMSSockJSPrefix:           csmsSockPrefix,
 	}
-}
-
-// WSStationPollSeconds intervalo (segundos) entre polls à API de estações para o publisher WebSocket.
-func (c Config) WSStationPollSeconds() int {
-	if c.WSStationPollIntervalSeconds > 0 {
-		return c.WSStationPollIntervalSeconds
-	}
-	return c.WSPublishIntervalSeconds
 }

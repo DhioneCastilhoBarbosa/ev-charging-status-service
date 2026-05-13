@@ -4,8 +4,7 @@ id UUID PRIMARY KEY,
 email TEXT,
 api_user TEXT,
 api_password TEXT,
-api_key TEXT,
-webhook_url TEXT
+api_key TEXT
 );
 
 CREATE TABLE stations (

@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 
 	"ev-charging-status-service/internal/clients/intelbras"
-	"ev-charging-status-service/internal/repository"
 )
 
 type UserPublisher interface {
@@ -21,14 +20,12 @@ type StationListProvider interface {
 }
 
 type WSStationPublisher struct {
-	credsRepo      *repository.CredentialsRepository
 	stationService StationListProvider
 	publisher      UserPublisher
 	statusStore    ConnectorStatusStore
 }
 
 func NewWSStationPublisher(
-	credsRepo *repository.CredentialsRepository,
 	stationService StationListProvider,
 	publisher UserPublisher,
 	statusStore ConnectorStatusStore,
@@ -37,40 +34,13 @@ func NewWSStationPublisher(
 		statusStore = NewInMemoryConnectorStatusStore()
 	}
 	return &WSStationPublisher{
-		credsRepo:      credsRepo,
 		stationService: stationService,
 		publisher:      publisher,
 		statusStore:    statusStore,
 	}
 }
 
-func (p *WSStationPublisher) Run(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	p.publishOnce(ctx)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			p.publishOnce(ctx)
-		}
-	}
-}
-
-func (p *WSStationPublisher) publishOnce(ctx context.Context) {
-	userIDs, err := p.credsRepo.ListDistinctUserIDs(ctx)
-	if err != nil {
-		log.Printf("[ws-publisher] list credential users failed: %v", err)
-		return
-	}
-	for _, userID := range userIDs {
-		p.publishForUserIfStatusChanged(ctx, userID)
-	}
-}
-
+// publishForUserIfStatusChanged usado em testes; em produção o push incremental vem do STOMP (CSMS).
 func (p *WSStationPublisher) publishForUserIfStatusChanged(ctx context.Context, userID uuid.UUID) {
 	stations, err := p.stationService.GetStationsByUserID(ctx, userID)
 	if err != nil {
@@ -102,12 +72,12 @@ func (p *WSStationPublisher) OnWebSocketConnected(ctx context.Context, userIDStr
 }
 
 func (p *WSStationPublisher) publishPayloadAndPersistStatus(ctx context.Context, userID uuid.UUID, stations []intelbras.FlattenedChargePoint, newStatus map[string]string) {
-	payload := WebhookPayload{
+	payload := StationsPushPayload{
 		UserID:    userID.String(),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Stations:  flattenToWebhookStations(stations),
+		Stations:  flattenToStationsPushStations(stations),
 	}
-	body, err := buildWebhookPayloadJSON(payload)
+	body, err := buildStationsPushPayloadJSON(payload)
 	if err != nil {
 		log.Printf("[ws-publisher] marshal payload failed userId=%s err=%v", userID, err)
 		return

@@ -42,7 +42,7 @@ func (h *StationsHandler) RegisterRoutes(rg *gin.RouterGroup) {
 // handlePostStations lista estações (userId, timestamp, stations), após validar JWT + apiKey da config.
 //
 //	@Summary		Lista estações (Authorization: Bearer + apiKey no corpo)
-//	@Description	Valida o JWT (header `Authorization: Bearer`) retornado por `POST /v1/config` e confere `apiKey` do JSON com a salva no configure. O corpo da resposta segue o mesmo esquema do payload periódico de webhook de estações.
+//	@Description	Valida o JWT (header `Authorization: Bearer`) retornado por `POST /v1/config` e confere `apiKey` do JSON com a salva no configure. O corpo da resposta segue o mesmo esquema dos frames JSON do WebSocket de estações.
 //	@Tags			Estação
 //	@Accept			json
 //	@Produce		json

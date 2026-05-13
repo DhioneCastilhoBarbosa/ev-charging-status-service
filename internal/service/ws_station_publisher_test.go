@@ -55,7 +55,6 @@ func TestWSStationPublisher_publishForUserIfStatusChanged_skipsWhenEqual(t *test
 	pub := &recordingPublisher{}
 	store := NewInMemoryConnectorStatusStore()
 	p := &WSStationPublisher{
-		credsRepo:      nil,
 		stationService: fetch,
 		publisher:      pub,
 		statusStore:    store,
@@ -69,7 +68,7 @@ func TestWSStationPublisher_publishForUserIfStatusChanged_skipsWhenEqual(t *test
 
 	p.publishForUserIfStatusChanged(ctx, uid)
 	if pub.publishes() != 1 {
-		t.Fatalf("first poll should publish, got %d", pub.publishes())
+		t.Fatalf("first fetch should publish, got %d", pub.publishes())
 	}
 
 	p.publishForUserIfStatusChanged(ctx, uid)

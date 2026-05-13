@@ -1,8 +1,8 @@
-
 package api
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"time"
 
@@ -11,6 +11,7 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
+	"ev-charging-status-service/internal/clients/csmsstomp"
 	"ev-charging-status-service/internal/clients/intelbras"
 	"ev-charging-status-service/internal/config"
 	"ev-charging-status-service/internal/repository"
@@ -43,9 +44,8 @@ func SetupRoutes(db *sqlx.DB, cfg config.Config) *gin.Engine {
 
 	userRepo := repository.NewUserRepository(db)
 	credsRepo := repository.NewCredentialsRepository(db)
-	webhookRepo := repository.NewWebhookRepository(db)
 
-	configService := service.NewConfigService(userRepo, credsRepo, webhookRepo, intelbrasClient, cfg.EncryptionKey)
+	configService := service.NewConfigService(userRepo, credsRepo, intelbrasClient, cfg.EncryptionKey)
 	wsAuth := service.NewWSAuthService(cfg.WSJWTSecret, cfg.WSTokenTTL)
 	configHandler := NewConfigHandler(configService, wsAuth, cfg.APIKey, cfg.WSTokenTTL)
 
@@ -53,7 +53,7 @@ func SetupRoutes(db *sqlx.DB, cfg config.Config) *gin.Engine {
 	stationsHandler := NewStationsHandler(stationService, wsAuth, cfg.APIKey)
 	wsHub := NewWSHub()
 	wsStatusStore := service.NewInMemoryConnectorStatusStore()
-	wsPublisher := service.NewWSStationPublisher(credsRepo, stationService, wsHub, wsStatusStore)
+	wsPublisher := service.NewWSStationPublisher(stationService, wsHub, wsStatusStore)
 	wsHandler := NewWSHandler(cfg.APIKey, cfg.WSTokenTTL, wsAuth, userRepo, credsRepo, wsHub, func(ctx context.Context, userID string) {
 		wsPublisher.OnWebSocketConnected(ctx, userID)
 	})
@@ -64,8 +64,22 @@ func SetupRoutes(db *sqlx.DB, cfg config.Config) *gin.Engine {
 	stationsHandler.RegisterRoutes(v1)
 	wsHandler.RegisterRoutes(v1)
 
-	// Publicador WS: poll periódico; envia só se connectors[].status mudou (store em memória).
-	go wsPublisher.Run(context.Background(), time.Duration(cfg.WSStationPollSeconds())*time.Second)
+	// Snapshot inicial no WebSocket: um GET /chargepoints ao conectar (OnWebSocketConnected).
+	// Atualizações: apenas CSMS STOMP (sem poll periódico — evita rate limit).
+
+	if cfg.CSMSSTOMPEnabled {
+		host, useTLS, err := csmsstomp.ParseAPIHost(cfg.IntelbrasBaseURL)
+		if err != nil {
+			log.Printf("[status-subscriber] disabled: invalid INTELBRAS_BASE_URL: %v", err)
+		} else {
+			prefix := cfg.CSMSSockJSPrefix
+			sub := service.NewCSMSStatusSubscriber(credsRepo, stationService, wsHub, host, useTLS, prefix, 10*time.Minute)
+			go sub.Run(context.Background())
+			log.Printf("[status-subscriber] CSMS STOMP enabled host=%s tls=%v prefix=%q", host, useTLS, prefix)
+		}
+	} else {
+		log.Printf("[ws] CSMS STOMP disabled: WebSocket sends only the initial snapshot on connect (no incremental push)")
+	}
 
 	return router
 }

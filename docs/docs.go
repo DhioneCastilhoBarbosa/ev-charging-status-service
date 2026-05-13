@@ -42,7 +42,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Faz login na API Move/Intelbras, persiste credenciais (criptografadas se ` + "`" + `ENCRYPTION_KEY` + "`" + ` existir). ` + "`" + `webhookUrl` + "`" + ` é opcional. Resposta inclui ` + "`" + `token` + "`" + ` (JWT) e ` + "`" + `expiresIn` + "`" + ` (segundos, ver ` + "`" + `WS_TOKEN_TTL_SECONDS` + "`" + `). Use o JWT no header ` + "`" + `Authorization: Bearer` + "`" + ` em ` + "`" + `POST /v1/stations` + "`" + ` e ` + "`" + `DELETE /v1/config` + "`" + `. O JWT não substitui ` + "`" + `X-API-Key` + "`" + ` nas rotas que exigem esse header.",
+                "description": "Faz login na API Move/Intelbras, persiste credenciais (criptografadas se ` + "`" + `ENCRYPTION_KEY` + "`" + ` existir). Resposta inclui ` + "`" + `token` + "`" + ` (JWT) e ` + "`" + `expiresIn` + "`" + ` (segundos, ver ` + "`" + `WS_TOKEN_TTL_SECONDS` + "`" + `). Use o JWT no header ` + "`" + `Authorization: Bearer` + "`" + ` em ` + "`" + `POST /v1/stations` + "`" + ` e ` + "`" + `DELETE /v1/config` + "`" + `. O JWT não substitui ` + "`" + `X-API-Key` + "`" + ` nas rotas que exigem esse header.",
                 "consumes": [
                     "application/json"
                 ],
@@ -55,7 +55,7 @@ const docTemplate = `{
                 "summary": "Configura credenciais (e token JWT)",
                 "parameters": [
                     {
-                        "description": "email e password (obrigatórios); webhookUrl e apiKey (opcionais)",
+                        "description": "email e password (obrigatórios); apiKey (opcional)",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -103,7 +103,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Apaga o usuário identificado pelo JWT retornado em ` + "`" + `POST /v1/config` + "`" + ` (header ` + "`" + `Authorization: Bearer` + "`" + `) e todos os dados relacionados (credenciais, webhooks, eventos) via cascade.",
+                "description": "Apaga o usuário identificado pelo JWT retornado em ` + "`" + `POST /v1/config` + "`" + ` (header ` + "`" + `Authorization: Bearer` + "`" + `) e todos os dados relacionados (credenciais, etc.) via cascade.",
                 "tags": [
                     "Configuração"
                 ],
@@ -174,7 +174,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Valida o JWT (header ` + "`" + `Authorization: Bearer` + "`" + `) retornado por ` + "`" + `POST /v1/config` + "`" + ` e confere ` + "`" + `apiKey` + "`" + ` do JSON com a salva no configure. O corpo da resposta segue o mesmo esquema do payload periódico de webhook de estações.",
+                "description": "Valida o JWT (header ` + "`" + `Authorization: Bearer` + "`" + `) retornado por ` + "`" + `POST /v1/config` + "`" + ` e confere ` + "`" + `apiKey` + "`" + ` do JSON com a salva no configure. O corpo da resposta segue o mesmo esquema dos frames JSON do WebSocket de estações.",
                 "consumes": [
                     "application/json"
                 ],
@@ -247,9 +247,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "password": {
-                    "type": "string"
-                },
-                "webhookUrl": {
                     "type": "string"
                 }
             }
@@ -409,7 +406,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{"https"},
 	Title:            "EV Charging Status API",
-	Description:      "API para configuração e consulta de estações de recarga (Move/Intelbras), `POST /v1/stations` com JWT, webhook opcional no worker. Rotas em tempo real fora desta especificação permanecem disponíveis no serviço.",
+	Description:      "API para configuração e consulta de estações de recarga (Move/Intelbras), `POST /v1/stations` com JWT e push por WebSocket. Rotas em tempo real fora desta especificação permanecem disponíveis no serviço.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

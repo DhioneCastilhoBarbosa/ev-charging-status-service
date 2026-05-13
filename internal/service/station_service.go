@@ -71,15 +71,15 @@ func (s *StationService) VerifyIntelbrasAPIKeyForUser(ctx context.Context, userI
 }
 
 // BuildStationsPushPayload monta o mesmo JSON que o WebSocket envia (userId, timestamp, stations).
-func (s *StationService) BuildStationsPushPayload(ctx context.Context, userID uuid.UUID) (*WebhookPayload, error) {
+func (s *StationService) BuildStationsPushPayload(ctx context.Context, userID uuid.UUID) (*StationsPushPayload, error) {
 	list, err := s.GetStationsByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	return &WebhookPayload{
+	return &StationsPushPayload{
 		UserID:    userID.String(),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Stations:  flattenToWebhookStations(list),
+		Stations:  flattenToStationsPushStations(list),
 	}, nil
 }
 
@@ -99,6 +99,20 @@ func (s *StationService) decryptCredsInPlace(creds *repository.ThirdPartyCredent
 }
 
 func (s *StationService) getStationsWithCreds(ctx context.Context, creds *repository.ThirdPartyCredentials) ([]intelbras.FlattenedChargePoint, error) {
+	token, err := s.accessTokenForCreds(ctx, creds)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := s.intelbrasClient.GetChargePointList(ctx, token)
+	if err != nil {
+		return nil, fmt.Errorf("fetch charge points: %w", err)
+	}
+
+	return intelbras.FlattenChargePointList(resp.ChargePointList), nil
+}
+
+func (s *StationService) accessTokenForCreds(ctx context.Context, creds *repository.ThirdPartyCredentials) (string, error) {
 	s.decryptCredsInPlace(creds)
 
 	token := ""
@@ -118,7 +132,7 @@ func (s *StationService) getStationsWithCreds(ctx context.Context, creds *reposi
 		}
 		loginResp, err := s.intelbrasClient.Login(ctx, loginReq)
 		if err != nil {
-			return nil, fmt.Errorf("refresh token: %w", err)
+			return "", fmt.Errorf("refresh token: %w", err)
 		}
 		if loginResp != nil {
 			token = loginResp.AccessToken
@@ -129,11 +143,8 @@ func (s *StationService) getStationsWithCreds(ctx context.Context, creds *reposi
 			_ = s.credsRepo.UpdateToken(ctx, creds.ID, token, expires)
 		}
 	}
-
-	resp, err := s.intelbrasClient.GetChargePointList(ctx, token)
-	if err != nil {
-		return nil, fmt.Errorf("fetch charge points: %w", err)
+	if token == "" {
+		return "", fmt.Errorf("empty access token after refresh")
 	}
-
-	return intelbras.FlattenChargePointList(resp.ChargePointList), nil
+	return token, nil
 }

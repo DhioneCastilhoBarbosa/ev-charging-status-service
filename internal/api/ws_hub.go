@@ -73,6 +73,11 @@ func (h *WSHub) PublishToUser(userID string, payload []byte) {
 	}
 	h.mu.RUnlock()
 
+	if len(copied) == 0 {
+		log.Printf("[ws] PublishToUser: nenhum cliente WebSocket ligado para userId=%s (mensagem não entregue; abra GET /v1/ws com o JWT deste utilizador)", userID)
+		return
+	}
+
 	for _, c := range copied {
 		select {
 		case c.send <- wsMessage{messageType: websocket.TextMessage, payload: payload}:

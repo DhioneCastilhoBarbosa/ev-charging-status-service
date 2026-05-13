@@ -22,12 +22,11 @@ type ConfigHandler struct {
 }
 
 type ConfigRequest struct {
-	Email              string  `json:"email" binding:"required,email"`
-	Password           string  `json:"password" binding:"required"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
 	// Ignorado apenas na geração Swagger/OpenAPI (o campo continua aceito no body do endpoint).
-	RecaptchaResponse string `json:"recaptchaResponse" swaggerignore:"true"`
-	APIKey             *string `json:"apiKey"`
-	WebhookURL         string  `json:"webhookUrl" binding:"omitempty,url"`
+	RecaptchaResponse string  `json:"recaptchaResponse" swaggerignore:"true"`
+	APIKey            *string `json:"apiKey"`
 }
 
 func NewConfigHandler(
@@ -51,14 +50,14 @@ func (h *ConfigHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.DELETE("/config", h.handleDeleteConfig)
 }
 
-// handleConfig configura credenciais na Intelbras e opcionalmente webhook; retorna JWT de sessão.
+// handleConfig configura credenciais na Intelbras; retorna JWT de sessão.
 //
 //	@Summary		Configura credenciais (e token JWT)
-//	@Description	Faz login na API Move/Intelbras, persiste credenciais (criptografadas se `ENCRYPTION_KEY` existir). `webhookUrl` é opcional. Resposta inclui `token` (JWT) e `expiresIn` (segundos, ver `WS_TOKEN_TTL_SECONDS`). Use o JWT no header `Authorization: Bearer` em `POST /v1/stations` e `DELETE /v1/config`. O JWT não substitui `X-API-Key` nas rotas que exigem esse header.
+//	@Description	Faz login na API Move/Intelbras, persiste credenciais (criptografadas se `ENCRYPTION_KEY` existir). Resposta inclui `token` (JWT) e `expiresIn` (segundos, ver `WS_TOKEN_TTL_SECONDS`). Use o JWT no header `Authorization: Bearer` em `POST /v1/stations` e `DELETE /v1/config`. O JWT não substitui `X-API-Key` nas rotas que exigem esse header.
 //	@Tags			Configuração
 //	@Accept			json
 //	@Produce		json
-//	@Param			body	body		ConfigRequest	true	"email e password (obrigatórios); webhookUrl e apiKey (opcionais)"
+//	@Param			body	body		ConfigRequest	true	"email e password (obrigatórios); apiKey (opcional)"
 //	@Success		200		{object}	ConfigResponse	"token, expiresIn"
 //	@Failure		400		{object}	ErrorResponse	"invalid request"
 //	@Failure		401		{object}	ErrorResponse	"unauthorized"
@@ -84,11 +83,10 @@ func (h *ConfigHandler) handleConfig(c *gin.Context) {
 	defer cancel()
 
 	input := service.ConfigInput{
-		Email:              req.Email,
-		Password:           req.Password,
-		RecaptchaResponse:  req.RecaptchaResponse,
-		APIKey:             req.APIKey,
-		WebhookURL:         req.WebhookURL,
+		Email:             req.Email,
+		Password:          req.Password,
+		RecaptchaResponse: req.RecaptchaResponse,
+		APIKey:            req.APIKey,
 	}
 
 	user, err := h.service.Configure(ctx, input)
@@ -144,7 +142,7 @@ func (h *ConfigHandler) handleConfigStatus(c *gin.Context) {
 // handleDeleteConfig remove o usuário identificado pelo JWT (Authorization: Bearer) e dados relacionados.
 //
 //	@Summary		Remove configuração e dados do usuário
-//	@Description	Apaga o usuário identificado pelo JWT retornado em `POST /v1/config` (header `Authorization: Bearer`) e todos os dados relacionados (credenciais, webhooks, eventos) via cascade.
+//	@Description	Apaga o usuário identificado pelo JWT retornado em `POST /v1/config` (header `Authorization: Bearer`) e todos os dados relacionados (credenciais, etc.) via cascade.
 //	@Tags			Configuração
 //	@Param			Authorization	header		string	true	"Bearer &lt;JWT&gt;"
 //	@Success		204				"No content"
@@ -186,4 +184,3 @@ func (h *ConfigHandler) handleDeleteConfig(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
-

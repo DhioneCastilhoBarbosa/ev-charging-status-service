@@ -15,30 +15,26 @@ import (
 type ConfigService struct {
 	usersRepo       *repository.UserRepository
 	credsRepo       *repository.CredentialsRepository
-	webhookRepo     *repository.WebhookRepository
 	intelbrasClient *intelbras.Client
 	encryptionKey   []byte
 }
 
 type ConfigInput struct {
-	Email              string
-	Password           string
-	RecaptchaResponse  string
-	APIKey             *string
-	WebhookURL         string
+	Email             string
+	Password          string
+	RecaptchaResponse string
+	APIKey            *string
 }
 
 func NewConfigService(
 	usersRepo *repository.UserRepository,
 	credsRepo *repository.CredentialsRepository,
-	webhookRepo *repository.WebhookRepository,
 	intelbrasClient *intelbras.Client,
 	encryptionKey []byte,
 ) *ConfigService {
 	return &ConfigService{
 		usersRepo:       usersRepo,
 		credsRepo:       credsRepo,
-		webhookRepo:     webhookRepo,
 		intelbrasClient: intelbrasClient,
 		encryptionKey:   encryptionKey,
 	}
@@ -53,9 +49,9 @@ func (s *ConfigService) Configure(ctx context.Context, in ConfigInput) (*reposit
 
 	// 2. Login na API de terceiros: body = email, password, recaptchaResponse; header = API-Key
 	loginReq := intelbras.LoginRequest{
-		Email:              in.Email,
-		Password:           in.Password,
-		RecaptchaResponse:  in.RecaptchaResponse,
+		Email:             in.Email,
+		Password:          in.Password,
+		RecaptchaResponse: in.RecaptchaResponse,
 	}
 	if in.APIKey != nil {
 		loginReq.APIKey = *in.APIKey
@@ -100,22 +96,15 @@ func (s *ConfigService) Configure(ctx context.Context, in ConfigInput) (*reposit
 		return nil, fmt.Errorf("upsert credentials: %w", err)
 	}
 
-	// 4. Salvar webhook apenas quando informado.
-	if in.WebhookURL != "" {
-		if _, err := s.webhookRepo.UpsertForUser(ctx, user.ID, in.WebhookURL); err != nil {
-			return nil, fmt.Errorf("upsert webhook: %w", err)
-		}
-	}
-
 	return user, nil
 }
 
 // ConfigStatus indica se há config e se o token foi salvo (sem expor o token).
 type ConfigStatus struct {
-	Configured    bool       `json:"configured"`
-	TokenPresent  bool       `json:"tokenPresent"`
-	TokenExpiresAt *string   `json:"tokenExpiresAt,omitempty"`
-	APIUsername   string     `json:"apiUsername,omitempty"`
+	Configured     bool    `json:"configured"`
+	TokenPresent   bool    `json:"tokenPresent"`
+	TokenExpiresAt *string `json:"tokenExpiresAt,omitempty"`
+	APIUsername    string  `json:"apiUsername,omitempty"`
 }
 
 // GetConfigStatus retorna o status da configuração (primeira credencial em single-tenant).
@@ -137,7 +126,7 @@ func (s *ConfigService) GetConfigStatus(ctx context.Context) (*ConfigStatus, err
 }
 
 // DeleteConfiguredUser remove o usuário configurado (single-tenant) e todos os dados relacionados.
-// A remoção depende de ON DELETE CASCADE nas FKs (credenciais, webhooks, webhook_events, etc.).
+// A remoção depende de ON DELETE CASCADE nas FKs (credenciais, etc.).
 func (s *ConfigService) DeleteConfiguredUser(ctx context.Context) error {
 	creds, err := s.credsRepo.GetFirst(ctx)
 	if err != nil {
@@ -162,4 +151,3 @@ func (s *ConfigService) DeleteUserByID(ctx context.Context, userID uuid.UUID) er
 	}
 	return s.usersRepo.DeleteByID(ctx, userID)
 }
-

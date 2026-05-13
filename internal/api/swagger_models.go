@@ -30,7 +30,7 @@ type StationsResponse struct {
 	Stations []map[string]interface{} `json:"stations"`
 }
 
-// StationsPushResponse é o JSON retornado por POST /v1/stations e enviado pelo webhook periódico de estações.
+// StationsPushResponse é o JSON retornado por POST /v1/stations e pelos frames WebSocket de estações.
 type StationsPushResponse struct {
 	UserID    string               `json:"userId" example:"550e8400-e29b-41d4-a716-446655440000"`
 	Timestamp string               `json:"timestamp" example:"2026-05-04T12:00:00Z"`

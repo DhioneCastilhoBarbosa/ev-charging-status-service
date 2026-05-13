@@ -6,7 +6,7 @@ Plano para publicar no WebSocket apenas quando `connectors[].status` mudar em re
 
 ## Contexto
 
-- Poll periódico (ex.: `WS_PUBLISH_INTERVAL_SECONDS`, padrão 180 s) continua buscando estações como hoje.
+- O serviço **não** faz mais poll periódico a `GET …/chargepoints` para o WebSocket (rate limit); atualizações incrementais vêm do **STOMP** do CSMS.
 - JSON da API usa `lastStatus.status` por conector; o modelo em `internal/clients/intelbras/stations_client.go` já cobre isso após o flatten.
 - Estado “último snapshot de status por conector” **não** precisa ser compartilhado entre processos enquanto existir só um pod.
 
@@ -64,4 +64,4 @@ Plano para publicar no WebSocket apenas quando `connectors[].status` mudar em re
 - Publisher atual: `internal/service/ws_station_publisher.go`
 - Hub WS: `internal/api/ws_hub.go`, handler: `internal/api/ws_handler.go`
 - Lista de estações / flatten: `internal/clients/intelbras/stations_client.go`, `internal/service/station_service.go`
-- Intervalo: `WS_PUBLISH_INTERVAL_SECONDS` em `internal/config/config.go`
+- Snapshot ao conectar WebSocket: um `GET …/chargepoints` em `OnWebSocketConnected`.

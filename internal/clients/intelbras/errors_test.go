@@ -5,6 +5,19 @@ import (
 	"testing"
 )
 
+func TestNewAPIErrorParsesUnauthorizedMessage(t *testing.T) {
+	body := []byte(`{"message":"Invalid credentials","status":401,"error":"Unauthorized"}`)
+	err := newAPIError(http.StatusUnauthorized, body)
+
+	if err.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status: got %d want %d", err.StatusCode, http.StatusUnauthorized)
+	}
+	want := "Invalid credentials"
+	if err.Message != want {
+		t.Fatalf("message: got %q want %q", err.Message, want)
+	}
+}
+
 func TestNewAPIErrorParsesRateLimitMessage(t *testing.T) {
 	body := []byte(`{"message":"Rate limit exceeded. Try again in 1687 seconds.","status":429,"error":"Too Many Requests"}`)
 	err := newAPIError(http.StatusTooManyRequests, body)

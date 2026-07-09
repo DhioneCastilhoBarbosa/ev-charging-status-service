@@ -50,7 +50,7 @@ func (h *StationsHandler) RegisterRoutes(rg *gin.RouterGroup) {
 //	@Param			body			body		StationsPostRequest	true	"apiKey (igual ao /v1/config; use string vazia ou omita se não houver apiKey na config)"
 //	@Success		200				{object}	StationsPushResponse	"userId, timestamp, stations"
 //	@Failure		400				{object}	ErrorResponse	"invalid request"
-//	@Failure		401				{object}	ErrorResponse	"unauthorized"
+//	@Failure		401				{object}	ErrorResponse	"unauthorized (X-API-Key ou JWT); ou Usuário sem autorização na plataforma CVE-Pro (API de terceiros)"
 //	@Failure		429				{object}	ErrorResponse	"rate limit exceeded (API de terceiros)"
 //	@Failure		502				{object}	ErrorResponse	"stations unavailable"
 //	@Security		ApiKeyAuth

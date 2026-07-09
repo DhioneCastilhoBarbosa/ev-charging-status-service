@@ -102,8 +102,8 @@ func (c *Client) Login(ctx context.Context, req LoginRequest) (*LoginResponse, e
 				log.Printf("[intelbras] login failed %d", resp.StatusCode)
 			}
 
-			// 429: devolve imediatamente para o caller propagar ao cliente (sem retry).
-			if resp.StatusCode == http.StatusTooManyRequests {
+			// 401/429: devolve imediatamente para o caller propagar ao cliente (sem retry).
+			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusTooManyRequests {
 				return nil, apiErr
 			}
 

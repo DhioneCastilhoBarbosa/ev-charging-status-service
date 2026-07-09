@@ -60,7 +60,7 @@ func (h *ConfigHandler) RegisterRoutes(rg *gin.RouterGroup) {
 //	@Param			body	body		ConfigRequest	true	"email e password (obrigatórios); apiKey (opcional)"
 //	@Success		200		{object}	ConfigResponse	"token, expiresIn"
 //	@Failure		400		{object}	ErrorResponse	"invalid request"
-//	@Failure		401		{object}	ErrorResponse	"unauthorized"
+//	@Failure		401		{object}	ErrorResponse	"Usuário sem autorização na plataforma CVE-Pro"
 //	@Failure		500		{object}	ErrorResponse	"token unavailable"
 //	@Failure		429		{object}	ErrorResponse	"rate limit exceeded (API de terceiros)"
 //	@Failure		502		{object}	ErrorResponse	"configuration failed"

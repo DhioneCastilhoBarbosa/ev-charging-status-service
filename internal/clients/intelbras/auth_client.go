@@ -95,18 +95,25 @@ func (c *Client) Login(ctx context.Context, req LoginRequest) (*LoginResponse, e
 		_ = resp.Body.Close()
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			// Não expor o body ao cliente; logar só no servidor para debug
+			apiErr := newAPIError(resp.StatusCode, respBody)
 			if len(respBody) > 0 {
 				log.Printf("[intelbras] login failed %d: %s", resp.StatusCode, string(respBody))
+			} else {
+				log.Printf("[intelbras] login failed %d", resp.StatusCode)
 			}
 
-			// Retry para falhas transitórias comuns (rate limit, gateway errors e timeouts).
-			// - 429/503: respeita Retry-After quando existir
+			// 429: devolve imediatamente para o caller propagar ao cliente (sem retry).
+			if resp.StatusCode == http.StatusTooManyRequests {
+				return nil, apiErr
+			}
+
+			// Retry para falhas transitórias comuns (gateway errors e timeouts).
+			// - 503: respeita Retry-After quando existir
 			// - 502/504: sem garantia de Retry-After; usa backoff exponencial
 			if attempt < maxAttempts-1 {
 				var delay time.Duration
 				switch resp.StatusCode {
-				case http.StatusTooManyRequests, http.StatusServiceUnavailable:
+				case http.StatusServiceUnavailable:
 					delay = retryAfterDelay(resp.Header.Get("Retry-After"), time.Duration(1<<attempt)*time.Second)
 				case http.StatusBadGateway, http.StatusGatewayTimeout:
 					delay = time.Duration(1<<attempt) * time.Second
@@ -119,7 +126,7 @@ func (c *Client) Login(ctx context.Context, req LoginRequest) (*LoginResponse, e
 				}
 			}
 
-			lastErr = fmt.Errorf("login failed with status %d", resp.StatusCode)
+			lastErr = apiErr
 			return nil, lastErr
 		}
 

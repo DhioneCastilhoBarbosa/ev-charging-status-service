@@ -51,6 +51,7 @@ func (h *StationsHandler) RegisterRoutes(rg *gin.RouterGroup) {
 //	@Success		200				{object}	StationsPushResponse	"userId, timestamp, stations"
 //	@Failure		400				{object}	ErrorResponse	"invalid request"
 //	@Failure		401				{object}	ErrorResponse	"unauthorized"
+//	@Failure		429				{object}	ErrorResponse	"rate limit exceeded (API de terceiros)"
 //	@Failure		502				{object}	ErrorResponse	"stations unavailable"
 //	@Security		ApiKeyAuth
 //	@Router			/v1/stations [post]
@@ -105,7 +106,7 @@ func (h *StationsHandler) handlePostStations(c *gin.Context) {
 	payload, err := h.service.BuildStationsPushPayload(ctx, userID)
 	if err != nil {
 		log.Printf("[stations] get error: %v", err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "stations unavailable"})
+		respondServiceError(c, err, http.StatusBadGateway, "stations unavailable")
 		return
 	}
 

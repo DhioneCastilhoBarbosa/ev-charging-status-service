@@ -62,6 +62,7 @@ func (h *ConfigHandler) RegisterRoutes(rg *gin.RouterGroup) {
 //	@Failure		400		{object}	ErrorResponse	"invalid request"
 //	@Failure		401		{object}	ErrorResponse	"unauthorized"
 //	@Failure		500		{object}	ErrorResponse	"token unavailable"
+//	@Failure		429		{object}	ErrorResponse	"rate limit exceeded (API de terceiros)"
 //	@Failure		502		{object}	ErrorResponse	"configuration failed"
 //	@Security		ApiKeyAuth
 //	@Router			/v1/config [post]
@@ -92,7 +93,7 @@ func (h *ConfigHandler) handleConfig(c *gin.Context) {
 	user, err := h.service.Configure(ctx, input)
 	if err != nil {
 		log.Printf("[config] configure error: %v", err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "configuration failed"})
+		respondServiceError(c, err, http.StatusBadGateway, "configuration failed")
 		return
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 )
 
@@ -88,14 +89,18 @@ func (c *Client) GetChargePointList(ctx context.Context, accessToken string) (*C
 	if err != nil {
 		return nil, fmt.Errorf("execute charge-points request: %w", err)
 	}
-	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("read charge-points response: %w", err)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("charge-points request failed with status %d", resp.StatusCode)
+		return nil, newAPIError(resp.StatusCode, respBody)
 	}
 
 	var out ChargePointListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := json.Unmarshal(respBody, &out); err != nil {
 		return nil, fmt.Errorf("decode charge-points response: %w", err)
 	}
 	return &out, nil

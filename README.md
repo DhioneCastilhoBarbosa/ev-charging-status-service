@@ -173,7 +173,9 @@ docker compose logs -f
 
 ### Migrations
 
-Após o primeiro `up`:
+A API aplica automaticamente os `.sql` de `migrations/` no startup (tabela `schema_migrations`). Em bancos já existentes, `001`–`004` são marcadas como aplicadas e só as novas (ex.: `005`) rodam.
+
+Para aplicar manualmente (Beekeeper / psql), após o primeiro `up`:
 
 ```bash
 # Linux / macOS

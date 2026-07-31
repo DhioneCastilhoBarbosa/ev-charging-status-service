@@ -29,6 +29,9 @@ func main() {
 	}
 
 	db := database.ConnectPostgres(cfg.PostgresURL)
+	if err := database.RunMigrations(db, "migrations"); err != nil {
+		log.Fatalf("migrations failed: %v", err)
+	}
 
 	router := api.SetupRoutes(db, cfg)
 

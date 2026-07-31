@@ -3,6 +3,7 @@ package api
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -14,11 +15,30 @@ type wsMessage struct {
 }
 
 type wsClient struct {
-	connectionID string
-	userID       string
-	conn         *websocket.Conn
-	send         chan wsMessage
-	hub          *WSHub
+	connectionID    string
+	userID          string
+	conn            *websocket.Conn
+	send            chan wsMessage
+	hub             *WSHub
+	lastAppActivity atomic.Int64 // unix nano
+	idleTimeout     time.Duration
+	onAppActivity   func(userID string)
+	onIdleTimeout   func(userID string)
+}
+
+func (c *wsClient) markAppActivity() {
+	c.lastAppActivity.Store(time.Now().UnixNano())
+	if c.onAppActivity != nil {
+		c.onAppActivity(c.userID)
+	}
+}
+
+func (c *wsClient) lastActivityTime() time.Time {
+	n := c.lastAppActivity.Load()
+	if n == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, n)
 }
 
 type WSHub struct {
@@ -44,6 +64,7 @@ func (h *WSHub) Register(c *wsClient) {
 	}
 	h.clientsByUser[c.userID][c] = struct{}{}
 	h.totalConnections++
+	c.lastAppActivity.Store(time.Now().UnixNano())
 }
 
 func (h *WSHub) Unregister(c *wsClient) {
@@ -99,6 +120,25 @@ func (h *WSHub) ActiveConnections(userID string) int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.clientsByUser[userID])
+}
+
+// CloseUserConnections encerra todas as conexões WS do usuário (ex.: idle invalidou a sessão).
+func (h *WSHub) CloseUserConnections(userID string) {
+	h.mu.RLock()
+	clients := h.clientsByUser[userID]
+	copied := make([]*wsClient, 0, len(clients))
+	for c := range clients {
+		copied = append(copied, c)
+	}
+	h.mu.RUnlock()
+	for _, c := range copied {
+		_ = c.conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseGoingAway, "session invalidated"),
+			time.Now().Add(2*time.Second),
+		)
+		_ = c.conn.Close()
+	}
 }
 
 func (h *WSHub) IncrementWriteError() {

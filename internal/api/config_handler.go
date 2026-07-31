@@ -14,11 +14,11 @@ import (
 )
 
 type ConfigHandler struct {
-	service  *service.ConfigService
-	wsAuth   *service.WSAuthService
-	apiKey   string
-	tokenTTL int
-	timeout  time.Duration
+	service *service.ConfigService
+	wsAuth  *service.WSAuthService
+	hub     *WSHub
+	apiKey  string
+	timeout time.Duration
 }
 
 type ConfigRequest struct {
@@ -32,15 +32,15 @@ type ConfigRequest struct {
 func NewConfigHandler(
 	s *service.ConfigService,
 	wsAuth *service.WSAuthService,
+	hub *WSHub,
 	apiKey string,
-	tokenTTL int,
 ) *ConfigHandler {
 	return &ConfigHandler{
-		service:  s,
-		wsAuth:   wsAuth,
-		apiKey:   apiKey,
-		tokenTTL: tokenTTL,
-		timeout:  30 * time.Second,
+		service: s,
+		wsAuth:  wsAuth,
+		hub:     hub,
+		apiKey:  apiKey,
+		timeout: 30 * time.Second,
 	}
 }
 
@@ -53,12 +53,12 @@ func (h *ConfigHandler) RegisterRoutes(rg *gin.RouterGroup) {
 // handleConfig configura credenciais na Intelbras; retorna JWT de sessão.
 //
 //	@Summary		Configura credenciais (e token JWT)
-//	@Description	Faz login na API Move/Intelbras, persiste credenciais (criptografadas se `ENCRYPTION_KEY` existir). Resposta inclui `token` (JWT) e `expiresIn` (segundos, ver `WS_TOKEN_TTL_SECONDS`). Use o JWT no header `Authorization: Bearer` em `POST /v1/stations` e `DELETE /v1/config`. O JWT não substitui `X-API-Key` nas rotas que exigem esse header.
+//	@Description	Faz login na API Move/Intelbras, persiste credenciais (criptografadas se `ENCRYPTION_KEY` existir). Resposta inclui `token` (JWT sem expiresIn). A sessão permanece válida até `DELETE /v1/config` ou até idle sem tráfego de aplicação no WebSocket (`WS_IDLE_TIMEOUT_SECONDS`). Use o JWT no header `Authorization: Bearer` em `POST /v1/stations` e `DELETE /v1/config`. O JWT não substitui `X-API-Key` nas rotas que exigem esse header.
 //	@Tags			Configuração
 //	@Accept			json
 //	@Produce		json
 //	@Param			body	body		ConfigRequest	true	"email e password (obrigatórios); apiKey (opcional)"
-//	@Success		200		{object}	ConfigResponse	"token, expiresIn"
+//	@Success		200		{object}	ConfigResponse	"token"
 //	@Failure		400		{object}	ErrorResponse	"invalid request"
 //	@Failure		401		{object}	ErrorResponse	"Usuário sem autorização na plataforma CVE-Pro"
 //	@Failure		500		{object}	ErrorResponse	"token unavailable"
@@ -97,18 +97,14 @@ func (h *ConfigHandler) handleConfig(c *gin.Context) {
 		return
 	}
 
-	// Gera token WS imediatamente após configurar, para reduzir round-trip do cliente.
-	token, err := h.wsAuth.GenerateToken(user.ID, user.Username)
+	token, err := h.wsAuth.GenerateToken(ctx, user.ID, user.Username)
 	if err != nil {
 		log.Printf("[config] token generation error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "token unavailable"})
 		return
 	}
 
-	c.JSON(http.StatusOK, ConfigResponse{
-		Token:     token,
-		ExpiresIn: h.tokenTTL,
-	})
+	c.JSON(http.StatusOK, ConfigResponse{Token: token})
 }
 
 // handleConfigStatus retorna o status da configuração (sem expor token).
@@ -143,7 +139,7 @@ func (h *ConfigHandler) handleConfigStatus(c *gin.Context) {
 // handleDeleteConfig remove o usuário identificado pelo JWT (Authorization: Bearer) e dados relacionados.
 //
 //	@Summary		Remove configuração e dados do usuário
-//	@Description	Apaga o usuário identificado pelo JWT retornado em `POST /v1/config` (header `Authorization: Bearer`) e todos os dados relacionados (credenciais, etc.) via cascade.
+//	@Description	Apaga o usuário identificado pelo JWT retornado em `POST /v1/config` (header `Authorization: Bearer`) e todos os dados relacionados (credenciais, etc.) via cascade. Invalida o JWT e fecha imediatamente quaisquer conexões WebSocket abertas desse usuário.
 //	@Tags			Configuração
 //	@Param			Authorization	header		string	true	"Bearer &lt;JWT&gt;"
 //	@Success		204				"No content"
@@ -166,7 +162,7 @@ func (h *ConfigHandler) handleDeleteConfig(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
 	}
-	claims, err := h.wsAuth.ValidateToken(tokenStr)
+	claims, err := h.wsAuth.ValidateToken(c.Request.Context(), tokenStr)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return
@@ -183,5 +179,10 @@ func (h *ConfigHandler) handleDeleteConfig(c *gin.Context) {
 		log.Printf("[config] delete user error: %v", err)
 		// não expor detalhes; manter 204 para tornar operação idempotente
 	}
+	// JWT só é validado no handshake; fecha conexões já abertas para parar o push imediato.
+	if h.hub != nil {
+		h.hub.CloseUserConnections(userID.String())
+	}
+	log.Printf("[config] user deleted userId=%s — WebSocket connections closed", userID)
 	c.Status(http.StatusNoContent)
 }

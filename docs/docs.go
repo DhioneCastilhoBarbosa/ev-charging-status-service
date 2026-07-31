@@ -42,7 +42,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Faz login na API Move/Intelbras, persiste credenciais (criptografadas se ` + "`" + `ENCRYPTION_KEY` + "`" + ` existir). Resposta inclui ` + "`" + `token` + "`" + ` (JWT) e ` + "`" + `expiresIn` + "`" + ` (segundos, ver ` + "`" + `WS_TOKEN_TTL_SECONDS` + "`" + `). Use o JWT no header ` + "`" + `Authorization: Bearer` + "`" + ` em ` + "`" + `POST /v1/stations` + "`" + ` e ` + "`" + `DELETE /v1/config` + "`" + `. O JWT não substitui ` + "`" + `X-API-Key` + "`" + ` nas rotas que exigem esse header.",
+                "description": "Faz login na API Move/Intelbras, persiste credenciais (criptografadas se ` + "`" + `ENCRYPTION_KEY` + "`" + ` existir). Resposta inclui ` + "`" + `token` + "`" + ` (JWT sem expiresIn). A sessão permanece válida até ` + "`" + `DELETE /v1/config` + "`" + ` ou até idle sem tráfego de aplicação no WebSocket (` + "`" + `WS_IDLE_TIMEOUT_SECONDS` + "`" + `). Use o JWT no header ` + "`" + `Authorization: Bearer` + "`" + ` em ` + "`" + `POST /v1/stations` + "`" + ` e ` + "`" + `DELETE /v1/config` + "`" + `. O JWT não substitui ` + "`" + `X-API-Key` + "`" + ` nas rotas que exigem esse header.",
                 "consumes": [
                     "application/json"
                 ],
@@ -66,7 +66,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "token, expiresIn",
+                        "description": "token",
                         "schema": {
                             "$ref": "#/definitions/api.ConfigResponse"
                         }
@@ -254,10 +254,6 @@ const docTemplate = `{
         "api.ConfigResponse": {
             "type": "object",
             "properties": {
-                "expiresIn": {
-                    "type": "integer",
-                    "example": 300
-                },
                 "token": {
                     "type": "string",
                     "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."

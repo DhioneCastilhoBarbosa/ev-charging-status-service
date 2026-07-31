@@ -7,20 +7,29 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: charging
     ports:
-      - "5432:5432"
+      # Host 5433: evita conflito com outros Postgres locais (ex.: cve-registration-db em 5432).
+      - "5433:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d charging"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
 
   api:
     build: .
     container_name: ev-charging-api
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       POSTGRES_URL: postgres://postgres:postgres@db:5432/charging?sslmode=disable
       INTELBRAS_BASE_URL: ${INTELBRAS_BASE_URL}
       API_KEY: ${API_KEY}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      WS_JWT_SECRET: ${WS_JWT_SECRET:-}
+      WS_IDLE_TIMEOUT_SECONDS: ${WS_IDLE_TIMEOUT_SECONDS:-3600}
     ports:
       - "8085:8085"
 

@@ -79,7 +79,7 @@ func (h *StationsHandler) handlePostStations(c *gin.Context) {
 		return
 	}
 
-	claims, err := h.wsAuth.ValidateToken(tokenStr)
+	claims, err := h.wsAuth.ValidateToken(c.Request.Context(), tokenStr)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 		return

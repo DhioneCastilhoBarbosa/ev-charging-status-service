@@ -17,8 +17,9 @@ type Config struct {
 	IntelbrasChargePointMaxRPM int
 	APIKey                     string
 	EncryptionKey              []byte
-	WSJWTSecret                []byte
-	WSTokenTTL                 int
+	WSJWTSecret []byte
+	// WSIdleTimeoutSeconds: sem tráfego de aplicação no WebSocket (não ping/pong) por este período → fecha WS e invalida JWT (default 3600).
+	WSIdleTimeoutSeconds int
 	// CSMSSTOMPEnabled: assina /topic/status/chargeBox/{uuid} no CSMS e publica mudanças no WebSocket (default true).
 	CSMSSTOMPEnabled bool
 	// CSMSSockJSPrefix: prefixo SockJS no host Move (default /ws).
@@ -32,10 +33,10 @@ func Load() Config {
 		// Fallback para facilitar rollout inicial quando somente API_KEY existe.
 		wsSecret = os.Getenv("API_KEY")
 	}
-	wsTTLSec := 300
-	if raw := strings.TrimSpace(os.Getenv("WS_TOKEN_TTL_SECONDS")); raw != "" {
+	wsIdleSec := 3600
+	if raw := strings.TrimSpace(os.Getenv("WS_IDLE_TIMEOUT_SECONDS")); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			wsTTLSec = parsed
+			wsIdleSec = parsed
 		}
 	}
 	intelbrasChargePointMaxRPM := 55
@@ -62,9 +63,9 @@ func Load() Config {
 		IntelbrasChargePointMaxRPM: intelbrasChargePointMaxRPM,
 		APIKey:                     os.Getenv("API_KEY"),
 		EncryptionKey:              encKey,
-		WSJWTSecret:                []byte(wsSecret),
-		WSTokenTTL:                 wsTTLSec,
-		CSMSSTOMPEnabled:           csmsStompEnabled,
-		CSMSSockJSPrefix:           csmsSockPrefix,
+		WSJWTSecret:          []byte(wsSecret),
+		WSIdleTimeoutSeconds: wsIdleSec,
+		CSMSSTOMPEnabled:     csmsStompEnabled,
+		CSMSSockJSPrefix:     csmsSockPrefix,
 	}
 }

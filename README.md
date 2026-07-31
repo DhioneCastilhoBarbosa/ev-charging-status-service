@@ -133,17 +133,20 @@ flowchart TB
 ## Fluxo de dados
 
 ```text
-1. POST /v1/config          → login Move + persiste credenciais + devolve JWT WS
+1. POST /v1/config          → login Move + persiste credenciais + devolve JWT WS (sem expiresIn)
 2. GET  /v1/ws?token=...    → upgrade WebSocket (só JWT, sem X-API-Key)
 3. Servidor                 → 1 frame JSON (snapshot completo)
 4. CSMS STOMP (opcional)    → mudanças de conector → mesmo JSON atualizado
 5. POST /v1/stations        → mesma carga via HTTP (Bearer JWT + apiKey no body)
 ```
 
+A sessão JWT vale até `DELETE /v1/config` ou idle sem tráfego de aplicação no WebSocket (`WS_IDLE_TIMEOUT_SECONDS`).
+
 ### WebSocket em detalhe
 
-- **Handshake:** `?token=<JWT>` ou `Authorization: Bearer <JWT>`. Token inválido/expirado → **401** (sem upgrade).
-- **TTL:** `WS_TOKEN_TTL_SECONDS` (default `300`).
+- **Handshake:** `?token=<JWT>` ou `Authorization: Bearer <JWT>`. Token inválido, usuário removido ou sessão idle → **401** (sem upgrade).
+- **Sessão:** sem `expiresIn`/`exp` fixo. Idle configurável via `WS_IDLE_TIMEOUT_SECONDS` (default `3600`). Ping/pong **não** renovam a sessão; push JSON e mensagens do cliente renovam. Idle → fecha WS e invalida JWT.
+- **Delete:** `DELETE /v1/config` remove o usuário e **fecha** conexões WS abertas desse `userId`.
 - **Transporte:** ping a cada **25s**; fila de **32** mensagens por conexão (backpressure — cliente lento pode ser desconectado).
 - **Isolamento:** o hub só publica para conexões do mesmo `userId` do JWT.
 - **STOMP off:** com `CSMS_STATUS_STOMP_ENABLED=false`, só o snapshot inicial é enviado.
@@ -178,6 +181,7 @@ cat migrations/001_init.sql \
     migrations/002_webhook_events_payload_text.sql \
     migrations/003_third_party_credentials_unique_user.sql \
     migrations/004_drop_webhooks.sql \
+    migrations/005_ws_session_activity.sql \
   | docker exec -i ev-charging-db psql -U postgres -d charging
 ```
 
@@ -187,6 +191,7 @@ Get-Content migrations/001_init.sql | docker exec -i ev-charging-db psql -U post
 Get-Content migrations/002_webhook_events_payload_text.sql | docker exec -i ev-charging-db psql -U postgres -d charging
 Get-Content migrations/003_third_party_credentials_unique_user.sql | docker exec -i ev-charging-db psql -U postgres -d charging
 Get-Content migrations/004_drop_webhooks.sql | docker exec -i ev-charging-db psql -U postgres -d charging
+Get-Content migrations/005_ws_session_activity.sql | docker exec -i ev-charging-db psql -U postgres -d charging
 ```
 
 A migration `003` remove credenciais duplicadas por `user_id` e cria índice único (necessário para upsert e para evitar rajadas no WebSocket).
@@ -214,7 +219,7 @@ Copie `.env.example` → `.env`. No Compose, o serviço `api` consome essas vari
 | `API_KEY` | ✅* | Header `X-API-Key`. Use `ALLOW_EMPTY_API_KEY=true` só em dev |
 | `ENCRYPTION_KEY` | — | AES-256-GCM para senha/API key no banco (UUID, senha ou base64 32 bytes). Vazia = texto plano |
 | `WS_JWT_SECRET` | —* | Segredo do JWT WS. Vazio → fallback em `API_KEY` |
-| `WS_TOKEN_TTL_SECONDS` | — | TTL do token WS (default `300`) |
+| `WS_IDLE_TIMEOUT_SECONDS` | — | Sem tráfego de app no WS (ping/pong não conta) → fecha WS e invalida JWT (default `3600`) |
 | `INTELBRAS_CHARGEPOINT_MAX_RPM` | — | Limite de `GET /chargepoints`/min neste processo (default `55`; `0` desliga) |
 | `CSMS_STATUS_STOMP_ENABLED` | — | `true`/`false` — push incremental via STOMP (default `true`) |
 | `CSMS_SOCKJS_PREFIX` | — | Prefixo SockJS no host Move (default `/ws`) |
@@ -226,11 +231,11 @@ Copie `.env.example` → `.env`. No Compose, o serviço `api` consome essas vari
 | Método | Rota | Auth | Descrição |
 |--------|------|------|-----------|
 | `GET` | `/health` | — | Health check |
-| `POST` | `/v1/config` | `X-API-Key` | Configura email/senha (+ `apiKey` opcional). Resposta: `token`, `expiresIn` |
+| `POST` | `/v1/config` | `X-API-Key` | Configura email/senha (+ `apiKey` opcional). Resposta: `token` (sem `expiresIn`) |
 | `GET` | `/v1/config/status` | `X-API-Key` | Indica se há config e token Intelbras (sem expor segredos) |
-| `DELETE` | `/v1/config` | `X-API-Key` + Bearer JWT | Remove o usuário do JWT → **204** |
+| `DELETE` | `/v1/config` | `X-API-Key` + Bearer JWT | Remove o usuário do JWT, fecha WS abertos → **204** |
 | `POST` | `/v1/stations` | `X-API-Key` + Bearer JWT | Body `{"apiKey":"..."}`. Retorna `userId`, `timestamp`, `stations` |
-| `GET` | `/v1/ws/token?username=` | `X-API-Key` | Emite JWT WS (`token`, `expiresIn`) |
+| `GET` | `/v1/ws/token?username=` | `X-API-Key` | Emite JWT WS (`token` apenas) |
 | `GET` | `/v1/ws` | **só JWT** | Upgrade WebSocket |
 | `GET` | `/v1/ws/stats` | `X-API-Key` | Métricas do hub (conexões, mensagens, drops) |
 
@@ -262,6 +267,7 @@ swag init -g cmd/api/main.go -o docs
 | `002_webhook_events_payload_text.sql` | `payload` JSONB → TEXT (histórico) |
 | `003_third_party_credentials_unique_user.sql` | Dedup + unique por `user_id` |
 | `004_drop_webhooks.sql` | Remove tabelas de webhook (descontinuado) |
+| `005_ws_session_activity.sql` | `users.ws_last_activity_at` para idle/invalidação de sessão JWT/WS |
 | `clear_data.sql` | `TRUNCATE` dos dados, mantém estrutura |
 
 ---

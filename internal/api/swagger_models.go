@@ -10,10 +10,10 @@ type ErrorResponse struct {
 	Error string `json:"error" example:"unauthorized"`
 }
 
-// ConfigResponse contém o JWT de sessão e a validade em segundos (resposta de POST /v1/config).
+// ConfigResponse contém o JWT de sessão (resposta de POST /v1/config).
+// A sessão não usa expiresIn: permanece válida até delete do usuário ou idle sem tráfego de app no WebSocket.
 type ConfigResponse struct {
-	Token     string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
-	ExpiresIn int    `json:"expiresIn" example:"300"`
+	Token string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
 }
 
 // ConfigStatusResponse representa o status da configuração.

@@ -46,15 +46,15 @@ func SetupRoutes(db *sqlx.DB, cfg config.Config) *gin.Engine {
 	credsRepo := repository.NewCredentialsRepository(db)
 
 	configService := service.NewConfigService(userRepo, credsRepo, intelbrasClient, cfg.EncryptionKey)
-	wsAuth := service.NewWSAuthService(cfg.WSJWTSecret, cfg.WSTokenTTL)
-	configHandler := NewConfigHandler(configService, wsAuth, cfg.APIKey, cfg.WSTokenTTL)
+	wsAuth := service.NewWSAuthService(cfg.WSJWTSecret, cfg.WSIdleTimeoutSeconds, userRepo, credsRepo)
+	wsHub := NewWSHub()
+	configHandler := NewConfigHandler(configService, wsAuth, wsHub, cfg.APIKey)
 
 	stationService := service.NewStationService(credsRepo, intelbrasClient, cfg.EncryptionKey)
 	stationsHandler := NewStationsHandler(stationService, wsAuth, cfg.APIKey)
-	wsHub := NewWSHub()
 	wsStatusStore := service.NewInMemoryConnectorStatusStore()
 	wsPublisher := service.NewWSStationPublisher(stationService, wsHub, wsStatusStore)
-	wsHandler := NewWSHandler(cfg.APIKey, cfg.WSTokenTTL, wsAuth, userRepo, credsRepo, wsHub, func(ctx context.Context, userID string) {
+	wsHandler := NewWSHandler(cfg.APIKey, wsAuth, userRepo, credsRepo, wsHub, func(ctx context.Context, userID string) {
 		wsPublisher.OnWebSocketConnected(ctx, userID)
 	})
 

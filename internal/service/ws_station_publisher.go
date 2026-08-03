@@ -14,6 +14,11 @@ type UserPublisher interface {
 	PublishToUser(userID string, payload []byte)
 }
 
+// ActiveWSChecker indica se o usuário tem WebSocket conectado (hub).
+type ActiveWSChecker interface {
+	ActiveConnections(userID string) int
+}
+
 // StationListProvider obtém estações achatadas por usuário (permite testes com stub).
 type StationListProvider interface {
 	GetStationsByUserID(ctx context.Context, userID uuid.UUID) ([]intelbras.FlattenedChargePoint, error)

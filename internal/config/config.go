@@ -24,6 +24,8 @@ type Config struct {
 	CSMSSTOMPEnabled bool
 	// CSMSSockJSPrefix: prefixo SockJS no host Move (default /ws).
 	CSMSSockJSPrefix string
+	// StationsInventoryPollSeconds: intervalo para detectar estação add/remove e publicar no WS (default 15).
+	StationsInventoryPollSeconds int
 }
 
 func Load() Config {
@@ -55,17 +57,24 @@ func Load() Config {
 		}
 	}
 	csmsSockPrefix := strings.TrimSpace(os.Getenv("CSMS_SOCKJS_PREFIX"))
+	inventoryPollSec := 15
+	if raw := strings.TrimSpace(os.Getenv("STATIONS_INVENTORY_POLL_SECONDS")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			inventoryPollSec = parsed
+		}
+	}
 	return Config{
-		PostgresURL:                os.Getenv("POSTGRES_URL"),
-		RedisAddr:                  os.Getenv("REDIS_ADDR"),
-		KafkaBroker:                os.Getenv("KAFKA_BROKER"),
-		IntelbrasBaseURL:           os.Getenv("INTELBRAS_BASE_URL"),
-		IntelbrasChargePointMaxRPM: intelbrasChargePointMaxRPM,
-		APIKey:                     os.Getenv("API_KEY"),
-		EncryptionKey:              encKey,
-		WSJWTSecret:          []byte(wsSecret),
-		WSIdleTimeoutSeconds: wsIdleSec,
-		CSMSSTOMPEnabled:     csmsStompEnabled,
-		CSMSSockJSPrefix:     csmsSockPrefix,
+		PostgresURL:                  os.Getenv("POSTGRES_URL"),
+		RedisAddr:                    os.Getenv("REDIS_ADDR"),
+		KafkaBroker:                  os.Getenv("KAFKA_BROKER"),
+		IntelbrasBaseURL:             os.Getenv("INTELBRAS_BASE_URL"),
+		IntelbrasChargePointMaxRPM:   intelbrasChargePointMaxRPM,
+		APIKey:                       os.Getenv("API_KEY"),
+		EncryptionKey:                encKey,
+		WSJWTSecret:                  []byte(wsSecret),
+		WSIdleTimeoutSeconds:         wsIdleSec,
+		CSMSSTOMPEnabled:             csmsStompEnabled,
+		CSMSSockJSPrefix:             csmsSockPrefix,
+		StationsInventoryPollSeconds: inventoryPollSec,
 	}
 }

@@ -65,7 +65,7 @@ func SetupRoutes(db *sqlx.DB, cfg config.Config) *gin.Engine {
 	wsHandler.RegisterRoutes(v1)
 
 	// Snapshot inicial no WebSocket: um GET /chargepoints ao conectar (OnWebSocketConnected).
-	// Atualizações: apenas CSMS STOMP (sem poll periódico — evita rate limit).
+	// Atualizações: CSMS STOMP (status) + diff de inventário no refresh da lista (~sessionRotate).
 
 	if cfg.CSMSSTOMPEnabled {
 		host, useTLS, err := csmsstomp.ParseAPIHost(cfg.IntelbrasBaseURL)
@@ -73,9 +73,10 @@ func SetupRoutes(db *sqlx.DB, cfg config.Config) *gin.Engine {
 			log.Printf("[status-subscriber] disabled: invalid INTELBRAS_BASE_URL: %v", err)
 		} else {
 			prefix := cfg.CSMSSockJSPrefix
-			sub := service.NewCSMSStatusSubscriber(credsRepo, stationService, wsHub, host, useTLS, prefix, 10*time.Minute)
+			invPoll := time.Duration(cfg.StationsInventoryPollSeconds) * time.Second
+			sub := service.NewCSMSStatusSubscriber(credsRepo, stationService, wsHub, host, useTLS, prefix, 10*time.Minute, invPoll)
 			go sub.Run(context.Background())
-			log.Printf("[status-subscriber] CSMS STOMP enabled host=%s tls=%v prefix=%q", host, useTLS, prefix)
+			log.Printf("[status-subscriber] CSMS STOMP enabled host=%s tls=%v prefix=%q inventoryPoll=%s", host, useTLS, prefix, invPoll)
 		}
 	} else {
 		log.Printf("[ws] CSMS STOMP disabled: WebSocket sends only the initial snapshot on connect (no incremental push)")

@@ -137,7 +137,8 @@ flowchart TB
 2. GET  /v1/ws?token=...    → upgrade WebSocket (só JWT, sem X-API-Key)
 3. Servidor                 → 1 frame JSON (snapshot completo)
 4. CSMS STOMP (opcional)    → mudanças de conector → mesmo JSON atualizado
-5. POST /v1/stations        → mesma carga via HTTP (Bearer JWT + apiKey no body)
+5. Refresh inventário (~10 min) → estação adicionada/removida → mesmo JSON atualizado
+6. POST /v1/stations        → mesma carga via HTTP (Bearer JWT + apiKey no body)
 ```
 
 A sessão JWT vale até `DELETE /v1/config` ou idle sem tráfego de aplicação no WebSocket (`WS_IDLE_TIMEOUT_SECONDS`).
@@ -147,6 +148,7 @@ A sessão JWT vale até `DELETE /v1/config` ou idle sem tráfego de aplicação 
 - **Handshake:** `?token=<JWT>` ou `Authorization: Bearer <JWT>`. Token inválido, usuário removido ou sessão idle → **401** (sem upgrade).
 - **Sessão:** sem `expiresIn`/`exp` fixo. Idle configurável via `WS_IDLE_TIMEOUT_SECONDS` (default `3600`). Ping/pong **não** renovam a sessão; push JSON e mensagens do cliente renovam. Idle → fecha WS e invalida JWT.
 - **Delete:** `DELETE /v1/config` remove o usuário e **fecha** conexões WS abertas desse `userId`.
+- **Push:** (1) mudança de `status`/`errorCode`/`erroInfo` via STOMP; (2) inventário (estação add/remove) a cada `STATIONS_INVENTORY_POLL_SECONDS` (default 15s), **somente se o usuário tiver WebSocket ativo**; (3) `DELETE /v1/config` envia snapshot com `stations: []` antes de fechar o WS.
 - **Transporte:** ping a cada **25s**; fila de **32** mensagens por conexão (backpressure — cliente lento pode ser desconectado).
 - **Isolamento:** o hub só publica para conexões do mesmo `userId` do JWT.
 - **STOMP off:** com `CSMS_STATUS_STOMP_ENABLED=false`, só o snapshot inicial é enviado.
@@ -225,6 +227,7 @@ Copie `.env.example` → `.env`. No Compose, o serviço `api` consome essas vari
 | `INTELBRAS_CHARGEPOINT_MAX_RPM` | — | Limite de `GET /chargepoints`/min neste processo (default `55`; `0` desliga) |
 | `CSMS_STATUS_STOMP_ENABLED` | — | `true`/`false` — push incremental via STOMP (default `true`) |
 | `CSMS_SOCKJS_PREFIX` | — | Prefixo SockJS no host Move (default `/ws`) |
+| `STATIONS_INVENTORY_POLL_SECONDS` | — | Intervalo para detectar estação add/remove (default `15`; só usuários com WS aberto; ~4 req/min por WS ativo) |
 
 ---
 

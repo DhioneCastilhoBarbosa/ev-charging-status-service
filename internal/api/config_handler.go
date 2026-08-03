@@ -179,8 +179,19 @@ func (h *ConfigHandler) handleDeleteConfig(c *gin.Context) {
 		log.Printf("[config] delete user error: %v", err)
 		// não expor detalhes; manter 204 para tornar operação idempotente
 	}
-	// JWT só é validado no handshake; fecha conexões já abertas para parar o push imediato.
+	// Payload final (lista vazia) antes de fechar o WS — cliente vê o inventário zerado.
 	if h.hub != nil {
+		empty := service.StationsPushPayload{
+			UserID:    userID.String(),
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			Stations:  []service.StationsPushStation{},
+		}
+		if body, err := service.MarshalStationsPushPayload(empty); err != nil {
+			log.Printf("[config] marshal empty stations on delete userId=%s: %v", userID, err)
+		} else {
+			h.hub.PublishToUser(userID.String(), body)
+			log.Printf("[config] → WebSocket empty stations userId=%s reason=user-deleted", userID)
+		}
 		h.hub.CloseUserConnections(userID.String())
 	}
 	log.Printf("[config] user deleted userId=%s — WebSocket connections closed", userID)

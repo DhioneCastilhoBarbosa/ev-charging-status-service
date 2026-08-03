@@ -18,19 +18,24 @@ import (
 )
 
 // CSMSStatusSubscriber inscreve no STOMP do CSMS por usuário (token + UUIDs das estações)
-// e publica no WebSocket apenas quando status, errorCode ou errorInfo mudam.
+// e publica no WebSocket quando:
+//   - status / errorCode / errorInfo mudam (eventos STOMP);
+//   - o inventário de estações muda (add/remove) — poll só com WebSocket ativo.
 type CSMSStatusSubscriber struct {
 	credsRepo      *repository.CredentialsRepository
 	stationService *StationService
 	publisher      UserPublisher
+	wsActive       ActiveWSChecker // opcional; se nil, inventário não faz poll periódico
 	host           string
 	useTLS         bool
 	sockPrefix     string
 	sessionRotate  time.Duration
+	inventoryPoll  time.Duration
 	reconcileEvery time.Duration
 }
 
-// NewCSMSStatusSubscriber cria o assinante. sockPrefix vazio usa "/ws". sessionRotate renova inscrições STOMP periodicamente.
+// NewCSMSStatusSubscriber cria o assinante.
+// sessionRotate renova a sessão STOMP; inventoryPollInterval checa add/remove de estações (0 = 15s).
 func NewCSMSStatusSubscriber(
 	credsRepo *repository.CredentialsRepository,
 	stationService *StationService,
@@ -39,15 +44,19 @@ func NewCSMSStatusSubscriber(
 	useTLS bool,
 	sockPrefix string,
 	sessionRotate time.Duration,
+	inventoryPollInterval time.Duration,
 ) *CSMSStatusSubscriber {
 	if sessionRotate <= 0 {
 		sessionRotate = 10 * time.Minute
+	}
+	if inventoryPollInterval <= 0 {
+		inventoryPollInterval = 15 * time.Second
 	}
 	p := strings.TrimSpace(sockPrefix)
 	if p == "" {
 		p = "/ws"
 	}
-	return &CSMSStatusSubscriber{
+	sub := &CSMSStatusSubscriber{
 		credsRepo:      credsRepo,
 		stationService: stationService,
 		publisher:      publisher,
@@ -55,8 +64,20 @@ func NewCSMSStatusSubscriber(
 		useTLS:         useTLS,
 		sockPrefix:     p,
 		sessionRotate:  sessionRotate,
+		inventoryPoll:  inventoryPollInterval,
 		reconcileEvery: 45 * time.Second,
 	}
+	if checker, ok := publisher.(ActiveWSChecker); ok {
+		sub.wsActive = checker
+	}
+	return sub
+}
+
+func (s *CSMSStatusSubscriber) hasActiveWS(userID uuid.UUID) bool {
+	if s.wsActive == nil {
+		return false
+	}
+	return s.wsActive.ActiveConnections(userID.String()) > 0
 }
 
 // Run reconcilia usuários com credenciais e mantém uma goroutine STOMP por usuário.
@@ -115,6 +136,10 @@ func (s *CSMSStatusSubscriber) Run(ctx context.Context) {
 func (s *CSMSStatusSubscriber) runUserLoop(ctx context.Context, userID uuid.UUID) {
 	cache := newCSMSFingerprintCache()
 	backoff := time.Second
+	var invMu sync.Mutex
+	var prevInventory []string // UUIDs ordenados; nil = ainda não havia baseline
+	var live []intelbras.FlattenedChargePoint
+
 	for ctx.Err() == nil {
 		stations, err := s.stationService.GetStationsByUserID(ctx, userID)
 		if err != nil {
@@ -128,6 +153,14 @@ func (s *CSMSStatusSubscriber) runUserLoop(ctx context.Context, userID uuid.UUID
 		backoff = time.Second
 
 		uuids := chargeBoxUUIDsFromStations(stations)
+		invMu.Lock()
+		if inventoryChanged(prevInventory, uuids) && s.hasActiveWS(userID) {
+			s.publishStationsSnapshot(userID, stations, "inventory-change")
+		}
+		prevInventory = append([]string(nil), uuids...)
+		live = cloneFlattenedStations(stations)
+		invMu.Unlock()
+
 		if len(uuids) == 0 {
 			sleepBackoff(ctx, 30*time.Second)
 			continue
@@ -144,9 +177,10 @@ func (s *CSMSStatusSubscriber) runUserLoop(ctx context.Context, userID uuid.UUID
 		}
 		token := strings.TrimSpace(*creds.AccessToken)
 
-		live := cloneFlattenedStations(stations)
-
 		connCtx, cancelConn := context.WithTimeout(ctx, s.sessionRotate)
+		// Poll de inventário durante a sessão STOMP (não espera 10 min para ver add/remove).
+		go s.pollInventoryDuringSession(connCtx, cancelConn, userID, &invMu, &prevInventory, &live)
+
 		err = csmsstomp.RunConsumer(connCtx, csmsstomp.DialConfig{
 			Host:           s.host,
 			SockJSPrefix:   s.sockPrefix,
@@ -161,25 +195,17 @@ func (s *CSMSStatusSubscriber) runUserLoop(ctx context.Context, userID uuid.UUID
 			if cache.isDuplicate(u, ev.ConnectorID, ev) {
 				return
 			}
-			if !applyCSMSEventToFlattened(&live, ev) {
+			invMu.Lock()
+			ok := applyCSMSEventToFlattened(&live, ev)
+			snapshot := cloneFlattenedStations(live)
+			invMu.Unlock()
+			if !ok {
 				log.Printf("[status-subscriber] STOMP sem match na lista: uuid=%s chargeBoxId=%q connectorId=%d",
 					u, ev.ChargeBoxID, ev.ConnectorID)
 				return
 			}
 			cache.remember(u, ev.ConnectorID, ev)
-			payload := StationsPushPayload{
-				UserID:    userID.String(),
-				Timestamp: time.Now().UTC().Format(time.RFC3339),
-				Stations:  flattenToStationsPushStations(live),
-			}
-			body, mErr := buildStationsPushPayloadJSON(payload)
-			if mErr != nil {
-				log.Printf("[status-subscriber] marshal payload userId=%s: %v", userID, mErr)
-				return
-			}
-			log.Printf("[status-subscriber] CSMS → WebSocket (snapshot) userId=%s uuid=%s connectorId=%d status=%s",
-				userID, u, ev.ConnectorID, ev.Status)
-			s.publisher.PublishToUser(userID.String(), body)
+			s.publishStationsSnapshot(userID, snapshot, fmt.Sprintf("stomp uuid=%s connectorId=%d status=%s", u, ev.ConnectorID, ev.Status))
 		})
 		cancelConn()
 
@@ -198,6 +224,66 @@ func (s *CSMSStatusSubscriber) runUserLoop(ctx context.Context, userID uuid.UUID
 			}
 		}
 	}
+}
+
+// pollInventoryDuringSession busca a lista periodicamente; se add/remove, publica e cancela o STOMP para reinscrever.
+func (s *CSMSStatusSubscriber) pollInventoryDuringSession(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	userID uuid.UUID,
+	invMu *sync.Mutex,
+	prevInventory *[]string,
+	live *[]intelbras.FlattenedChargePoint,
+) {
+	ticker := time.NewTicker(s.inventoryPoll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Sem WS ligado: não gasta GET /chargepoints (protege rate limit com muitos usuários).
+			if !s.hasActiveWS(userID) {
+				continue
+			}
+			stations, err := s.stationService.GetStationsByUserID(ctx, userID)
+			if err != nil {
+				log.Printf("[status-subscriber] inventory poll userId=%s: %v", userID, err)
+				continue
+			}
+			uuids := chargeBoxUUIDsFromStations(stations)
+			invMu.Lock()
+			changed := inventoryChanged(*prevInventory, uuids)
+			if changed {
+				*prevInventory = append([]string(nil), uuids...)
+				*live = cloneFlattenedStations(stations)
+			}
+			invMu.Unlock()
+			if !changed {
+				continue
+			}
+			s.publishStationsSnapshot(userID, stations, "inventory-change")
+			log.Printf("[status-subscriber] inventory changed userId=%s — restarting STOMP subscriptions", userID)
+			cancel()
+			return
+		}
+	}
+}
+
+// publishStationsSnapshot envia o payload completo (userId + stations + timestamp) ao WebSocket.
+func (s *CSMSStatusSubscriber) publishStationsSnapshot(userID uuid.UUID, stations []intelbras.FlattenedChargePoint, reason string) {
+	payload := StationsPushPayload{
+		UserID:    userID.String(),
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Stations:  flattenToStationsPushStations(stations),
+	}
+	body, err := buildStationsPushPayloadJSON(payload)
+	if err != nil {
+		log.Printf("[status-subscriber] marshal payload userId=%s: %v", userID, err)
+		return
+	}
+	log.Printf("[status-subscriber] → WebSocket userId=%s stations=%d reason=%s", userID, len(stations), reason)
+	s.publisher.PublishToUser(userID.String(), body)
 }
 
 func sleepBackoff(ctx context.Context, d time.Duration) {
@@ -225,6 +311,26 @@ func chargeBoxUUIDsFromStations(stations []intelbras.FlattenedChargePoint) []str
 	}
 	sort.Strings(out)
 	return out
+}
+
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// inventoryChanged reporta add/remove de estações (por UUID ordenado).
+func inventoryChanged(prev, next []string) bool {
+	if prev == nil {
+		return false
+	}
+	return !stringSlicesEqual(prev, next)
 }
 
 type csmsFingerprintCache struct {

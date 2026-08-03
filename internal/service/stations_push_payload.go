@@ -42,6 +42,11 @@ type StationsPushConnector struct {
 	ConnectorType string `json:"connectorType"`
 }
 
+// MarshalStationsPushPayload monta o JSON com ordem fixa: userId, stations, timestamp.
+func MarshalStationsPushPayload(p StationsPushPayload) ([]byte, error) {
+	return buildStationsPushPayloadJSON(p)
+}
+
 // buildStationsPushPayloadJSON monta o JSON com ordem fixa: userId, stations, timestamp.
 func buildStationsPushPayloadJSON(p StationsPushPayload) ([]byte, error) {
 	buf := &bytes.Buffer{}
